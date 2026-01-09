@@ -1,0 +1,167 @@
+package com.project.itda.domain.ai.service;
+
+import com.project.itda.domain.ai.config.AIServiceConfig;
+import com.project.itda.domain.ai.dto.request.MeetingRecommendRequest;
+import com.project.itda.domain.ai.dto.response.MeetingRecommendResponse;
+import com.project.itda.domain.ai.exception.AIServiceException;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestTemplate;
+
+import java.util.Map;
+
+/**
+ * FastAPI AI 서버 클라이언트 (완성)
+ */
+@Service
+@Slf4j
+public class AIServiceClient {
+
+    @Autowired
+    private RestTemplate restTemplate;
+
+    @Autowired
+    private AIServiceConfig config;
+
+    // ========================================================================
+    // 공통 메서드
+    // ========================================================================
+
+    /**
+     * FastAPI POST 요청 (공통)
+     */
+    protected <T, R> R post(String endpoint, T request, Class<R> responseType) {
+        String url = config.getUrl() + endpoint;
+
+        try {
+            log.info("🤖 FastAPI 요청: {} → {}", endpoint, request.getClass().getSimpleName());
+            log.debug("📤 요청 데이터: {}", request);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            HttpEntity<T> entity = new HttpEntity<>(request, headers);
+
+            ResponseEntity<R> response = restTemplate.postForEntity(
+                    url, entity, responseType
+            );
+
+            log.info("✅ FastAPI 응답: {} - {}", response.getStatusCode(), responseType.getSimpleName());
+            return response.getBody();
+
+        } catch (HttpClientErrorException e) {
+            log.error("❌ FastAPI 클라이언트 에러: {} - {}",
+                    e.getStatusCode(), e.getResponseBodyAsString());
+            throw new AIServiceException(
+                    "FastAPI 요청 오류: " + e.getMessage(),
+                    "HTTP_" + e.getStatusCode().value(),
+                    "FastAPI",
+                    e
+            );
+
+        } catch (HttpServerErrorException e) {
+            log.error("❌ FastAPI 서버 에러: {} - {}",
+                    e.getStatusCode(), e.getResponseBodyAsString());
+            throw new AIServiceException(
+                    "FastAPI 서버 오류: " + e.getMessage(),
+                    "HTTP_" + e.getStatusCode().value(),
+                    "FastAPI",
+                    e
+            );
+
+        } catch (ResourceAccessException e) {
+            log.error("❌ FastAPI 연결 실패: {}", e.getMessage());
+            throw new AIServiceException(
+                    "FastAPI 서버 연결 실패 (타임아웃 또는 서버 다운)",
+                    "CONNECTION_TIMEOUT",
+                    "FastAPI",
+                    e
+            );
+
+        } catch (Exception e) {
+            log.error("❌ FastAPI 예외: {}", e.getMessage(), e);
+            throw new AIServiceException(
+                    "FastAPI 알 수 없는 오류: " + e.getMessage(),
+                    "UNKNOWN_ERROR",
+                    "FastAPI",
+                    e
+            );
+        }
+    }
+
+    /**
+     * FastAPI GET 요청 (공통)
+     */
+    protected <R> R get(String endpoint, Class<R> responseType) {
+        String url = config.getUrl() + endpoint;
+
+        try {
+            log.info("🤖 FastAPI GET: {}", endpoint);
+
+            ResponseEntity<R> response = restTemplate.getForEntity(url, responseType);
+
+            log.info("✅ FastAPI 응답: {}", response.getStatusCode());
+            return response.getBody();
+
+        } catch (Exception e) {
+            log.error("❌ FastAPI GET 실패: {}", e.getMessage());
+            throw new AIServiceException(
+                    "FastAPI GET 요청 실패: " + e.getMessage(),
+                    e
+            );
+        }
+    }
+
+    // ========================================================================
+    // Step 2: SVD 모임 추천
+    // ========================================================================
+
+    /**
+     * SVD 협업 필터링 기반 모임 추천
+     *
+     * @param request 사용자 ID + 추천 개수
+     * @return 추천 모임 목록 (meeting_id, score, rank)
+     */
+    public MeetingRecommendResponse recommendMeetings(MeetingRecommendRequest request) {
+        return post("/api/ai/recommend/meetings", request, MeetingRecommendResponse.class);
+    }
+
+    // ========================================================================
+    // TODO: Step 3~5
+    // ========================================================================
+
+    // TODO: Step 3 - LightGBM 만족도 예측
+    // public SatisfactionPredictionResponse predictSatisfaction(SatisfactionPredictionRequest request)
+
+    // TODO: Step 4 - 중간지점 계산
+    // public PlaceRecommendResponse calculateCentroid(PlaceRecommendRequest request)
+
+    // TODO: Step 5 - 감성 분석
+    // public SentimentAnalysisResponse analyzeSentiment(SentimentAnalysisRequest request)
+
+    // ========================================================================
+    // 헬스체크 & 모델 정보
+    // ========================================================================
+
+    /**
+     * AI 서버 헬스체크
+     */
+    public Map<String, Object> healthCheck() {
+        return get("/api/ai/health", Map.class);
+    }
+
+    /**
+     * 로드된 AI 모델 정보 조회
+     */
+    public Map<String, Object> getModelsInfo() {
+        return get("/api/ai/models/info", Map.class);
+    }
+}
