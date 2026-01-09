@@ -42,6 +42,9 @@ dependencies {
     annotationProcessor 'org.projectlombok:lombok'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+    //비밀번호 암호화
+    implementation 'org.springframework.security:spring-security-crypto:6.0.3'
 }
 
 tasks.named('test') {

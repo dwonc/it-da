@@ -21,33 +21,6 @@ public class AdminController {
 
     private final AdminService adminService;
 
-
-    // ========== 임시 로그인 (개발용) ==========
-    private final AdminUserRepository adminUserRepository;
-
-    @PostMapping("/login")
-    public ResponseEntity<Map<String, Object>> login(
-            @RequestBody Map<String, String> request,
-            HttpSession session) {
-
-        String email = request.get("email");
-
-        AdminUser admin = adminUserRepository.findByEmail(email)
-                .orElseThrow(() -> new EntityNotFoundException("관리자를 찾을 수 없습니다"));
-
-        // 세션에 adminId 저장
-        session.setAttribute("adminId", admin.getAdminId());
-
-        Map<String, Object> response = new HashMap<>();
-        response.put("message", "로그인 성공");
-        response.put("adminId", admin.getAdminId());
-        response.put("name", admin.getName());
-        response.put("email", admin.getEmail());
-        response.put("role", admin.getRole());
-
-        return ResponseEntity.ok(response);
-    }
-
     //대시보드 조회 ==============================================================
 
     @GetMapping("/dashboard")
