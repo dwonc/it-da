@@ -40,9 +40,6 @@ public class User {
     private Double latitude;
     private Double longitude;
 
-    @Column(name = "birth_date")
-    private LocalDate birthDate;
-
     @Column(name = "profile_image_url", length = 500)
     private String profileImageUrl;
 
