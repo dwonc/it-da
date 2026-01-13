@@ -1,15 +1,4 @@
-import {
-  Gender,
-  UserStatus,
-  ProfileVisibility,
-  BudgetType,
-  EnergyType,
-  FrequencyType,
-  LeadershipType,
-  LocationType,
-  PurposeType,
-  TimePreference,
-} from "./enums";
+import { Gender, UserStatus } from "./enums";
 
 // User 타입 (백엔드 User Entity 기반)
 export interface User {
