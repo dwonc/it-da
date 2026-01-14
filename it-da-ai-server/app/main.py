@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.api.ai_routes import router as ai_router
+from app.api.notification_routes import router as notification_router  # ✨ 추가
 from app.models.model_loader import model_loader
 from app.core.logging import logger
 
@@ -36,7 +37,7 @@ async def lifespan(app: FastAPI):
 # FastAPI 앱 생성
 app = FastAPI(
     title="ITDA AI Server",
-    description="모임 추천 AI 서버 (SVD, LightGBM Ranker, KcELECTRA)",
+    description="모임 추천 AI 서버 (SVD, LightGBM Ranker, KcELECTRA) + Notification",  # ✨ 수정
     version="2.0.0",
     lifespan=lifespan
 )
@@ -52,6 +53,7 @@ app.add_middleware(
 
 # 라우터 등록
 app.include_router(ai_router)
+app.include_router(notification_router)  # ✨ 추가
 
 @app.get("/")
 async def root():
@@ -60,7 +62,8 @@ async def root():
         "status": "ok",
         "message": "ITDA AI Server is running",
         "version": "2.0.0",
-        "models": model_loader.get_status()
+        "models": model_loader.get_status(),
+        "modules": ["AI", "Notifications"]  # ✨ 추가
     }
 
 # ========================================
