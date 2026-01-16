@@ -192,6 +192,24 @@ public class Meeting {
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
+    /**
+     * 요일 (동적 계산)
+     */
+    @Transient
+    private String dayOfWeek;
+
+    /**
+     * 날짜만 (동적 계산)
+     */
+    @Transient
+    private String meetingDate;
+
+    /**
+     * AI 매칭 점수 (동적 할당)
+     */
+    @Transient
+    private Integer matchScore;
+
     // ========================================
 // 필드 추가
 // ========================================
@@ -281,6 +299,7 @@ public class Meeting {
             LocalDateTime meetingTime,
             String locationName,
             String locationAddress,
+            Double latitude,
             Double longitude,
             LocationType locationType,
             String vibe,
@@ -360,4 +379,19 @@ public class Meeting {
     public Double getLongitudeAsDouble() {
         return longitude != null ? longitude.doubleValue() : null;
     }
+
+    // Getter에서 동적 계산
+    public String getDayOfWeek() {
+        if (meetingTime == null) return null;
+        return meetingTime.getDayOfWeek().getDisplayName(
+                java.time.format.TextStyle.SHORT,
+                java.util.Locale.KOREAN
+        );
+    }
+
+    public String getMeetingDate() {
+        if (meetingTime == null) return null;
+        return meetingTime.toLocalDate().toString();
+    }
+
 }

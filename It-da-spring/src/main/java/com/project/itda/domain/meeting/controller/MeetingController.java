@@ -9,6 +9,7 @@ import com.project.itda.domain.meeting.dto.response.MeetingResponse;
 import com.project.itda.domain.meeting.service.MeetingSearchService;
 import com.project.itda.domain.meeting.service.MeetingService;
 import com.project.itda.domain.user.entity.User;
+import com.project.itda.domain.user.repository.UserRepository;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -32,6 +33,7 @@ public class MeetingController {
 
     private final MeetingService meetingService;
     private final MeetingSearchService meetingSearchService;
+    private final UserRepository userRepository;
 
     /**
      * 모임 생성
@@ -42,10 +44,14 @@ public class MeetingController {
     )
     @PostMapping
     public ResponseEntity<MeetingResponse> createMeeting(
-            @AuthenticationPrincipal User user,
+            @AuthenticationPrincipal Long userId,  // ✅ User 대신 Long (userId)
             @Valid @RequestBody MeetingCreateRequest request
     ) {
-        log.info("📍 POST /api/meetings - userId: {}", user.getUserId());
+        log.info("📍 POST /api/meetings - userId: {}", userId);
+
+        // ✅ User 조회
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
 
         MeetingResponse response = meetingService.createMeeting(user, request);
 
@@ -109,12 +115,15 @@ public class MeetingController {
     )
     @PutMapping("/{meetingId}")
     public ResponseEntity<MeetingResponse> updateMeeting(
-            @AuthenticationPrincipal User user,
+            @AuthenticationPrincipal Long userId,
             @Parameter(description = "모임 ID", required = true)
             @PathVariable Long meetingId,
             @Valid @RequestBody MeetingUpdateRequest request
     ) {
-        log.info("📍 PUT /api/meetings/{} - userId: {}", meetingId, user.getUserId());
+        log.info("📍 PUT /api/meetings/{} - userId: {}", meetingId, userId);
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
 
         MeetingResponse response = meetingService.updateMeeting(user, meetingId, request);
 
@@ -130,11 +139,14 @@ public class MeetingController {
     )
     @DeleteMapping("/{meetingId}")
     public ResponseEntity<Void> deleteMeeting(
-            @AuthenticationPrincipal User user,
+            @AuthenticationPrincipal Long userId,
             @Parameter(description = "모임 ID", required = true)
             @PathVariable Long meetingId
     ) {
-        log.info("📍 DELETE /api/meetings/{} - userId: {}", meetingId, user.getUserId());
+        log.info("📍 DELETE /api/meetings/{} - userId: {}", meetingId, userId);
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
 
         meetingService.deleteMeeting(user, meetingId);
 

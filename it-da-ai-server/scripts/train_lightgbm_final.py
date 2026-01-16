@@ -117,7 +117,7 @@ model.fit(
     callbacks=[lgb.early_stopping(30, verbose=False)]
 )
 
-with open("models/lightgbm_model.pkl", "wb") as f:
+with open("models/lightgbm_regressor.pkl", "wb") as f:
     pickle.dump(model, f)
 
 print(f"\n✅ 저장 완료! 특징: {model.n_features_in_}개")

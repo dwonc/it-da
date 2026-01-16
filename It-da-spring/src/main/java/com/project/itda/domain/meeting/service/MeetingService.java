@@ -40,7 +40,7 @@ public class MeetingService {
 
         // LocationType Enum 변환
         Meeting.LocationType locationType = Meeting.LocationType.valueOf(
-                request.getLocationType().toUpperCase()
+                request.getLocationType().toString().toUpperCase()
         );
 
         Meeting meeting = Meeting.builder()
@@ -137,6 +137,7 @@ public class MeetingService {
                 request.getMeetingTime(),
                 request.getLocationName(),
                 request.getLocationAddress(),
+                request.getLatitude(),
                 request.getLongitude(),
                 locationType,
                 request.getVibe(),

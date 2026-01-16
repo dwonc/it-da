@@ -1,6 +1,7 @@
 package com.project.itda.domain.meeting.dto.request;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.project.itda.domain.meeting.entity.Meeting;
 import jakarta.validation.constraints.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -49,7 +50,6 @@ public class MeetingCreateRequest {
      */
     @NotNull(message = "모임 일시는 필수입니다")
     @Future(message = "모임 일시는 현재 시간 이후여야 합니다")
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime meetingTime;
 
     /**
@@ -82,11 +82,15 @@ public class MeetingCreateRequest {
     @DecimalMax(value = "180.0", message = "경도는 180 이하여야 합니다")
     private Double longitude;
 
+    public enum LocationType {
+        INDOOR, OUTDOOR
+    }
+
     /**
      * 장소 유형 (indoor/outdoor)
      */
-    @NotBlank(message = "장소 유형은 필수입니다")
-    private String locationType;
+    @NotNull
+    private LocationType locationType;
 
     /**
      * 분위기 (active/chill/social)

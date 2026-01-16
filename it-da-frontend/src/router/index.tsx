@@ -10,6 +10,8 @@ import PublicRoute from "./PublicRoute";
 import OAuth2CallbackPage from "@/pages/auth/OAuth2CallbackPage";
 import ChatRoomPage from "@/pages/chat/ChatRoomPage";
 import TestChatPage from "@/pages/chat/TestChatPage.tsx";
+import MeetingCreatePage from "@/pages/meeting/MeetingCreatePage";
+import MeetingDetailPage from "@/pages/meeting/MeetingDetailPage";
 
 export const router = createBrowserRouter(
   [
@@ -65,29 +67,6 @@ export const router = createBrowserRouter(
       element: <MyPage />,
     },
     {
-      path: "/create",
-      element: (
-        <div
-          style={{
-            padding: "60px 40px",
-            textAlign: "center",
-            minHeight: "100vh",
-            background: "#f8f9fa",
-          }}
-        >
-          <h1 style={{ fontSize: "48px", marginBottom: "20px" }}>✨</h1>
-          <h2
-            style={{ fontSize: "32px", marginBottom: "12px", color: "#212529" }}
-          >
-            모임 만들기
-          </h2>
-          <p style={{ fontSize: "16px", color: "#868e96" }}>
-            새 모임 생성 페이지 (구현 예정)
-          </p>
-        </div>
-      ),
-    },
-    {
       path: "/mypage",
       element: <MyPage />,
     },
@@ -99,11 +78,11 @@ export const router = createBrowserRouter(
       path: "/profile/edit",
       element: <ProfileEditPage />,
     },
-    // {
-    //   // 2. 백엔드에서 단순히 /auth/callback으로만 보낼 경우 (404 방지)
-    //   path: "/auth/callback",
-    //   element: <OAuth2CallbackPage />,
-    // },
+    {
+      // 2. 백엔드에서 단순히 /auth/callback으로만 보낼 경우 (404 방지)
+      path: "/auth/callback",
+      element: <OAuth2CallbackPage />,
+    },
     {
       path: "/chat/:roomId",
       element: (
@@ -119,6 +98,19 @@ export const router = createBrowserRouter(
           <TestChatPage />
         </ProtectedRoute>
       ),
+    },
+    // ✅ 모임 생성 페이지
+    {
+      path: "meetings/create",
+      element: (
+        <ProtectedRoute>
+          <MeetingCreatePage />
+        </ProtectedRoute>
+      ),
+    },
+    {
+      path: "meetings/:meetingId",
+      element: <MeetingDetailPage />,
     },
   ],
   {

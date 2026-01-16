@@ -147,39 +147,63 @@ export const useMeetingStore = create<MeetingStore>()(
 
       fetchAIRecommendation: async (userId: number) => {
         try {
+          console.log("🎯 AI 추천 요청 시작:", userId);
+
           const response = await axios.get(
-            `${API_BASE_URL}/ai/recommendations/meetings`,
-            { params: { user_id: userId, top_n: 1 } }
+            `${API_BASE_URL}/ai/recommendations/personalized/${userId}`
           );
 
-          // ✅ 백단 키 변경 대응 (recommendations or recommended_meetings)
-          const recs =
-            response.data?.recommendations ??
-            response.data?.recommended_meetings ??
-            [];
+          console.log("📥 AI 추천 원본 응답:", response.data);
 
-          if (!Array.isArray(recs) || recs.length === 0) {
+          // ⭐ 응답 검증
+          if (!response.data) {
+            console.error("❌ 응답 데이터 없음");
             set({ aiRecommendation: null });
             return;
           }
 
-          // ✅ rec 구조도 두 가지 대응 (score / predicted_score)
-          const recommendedId =
-            recs[0].meeting_id ?? recs[0].meetingId ?? recs[0].id;
-
-          if (!recommendedId) {
+          if (!response.data.success) {
+            console.warn("⚠️ 추천 실패:", response.data.message);
             set({ aiRecommendation: null });
             return;
           }
 
-          const meetingResponse = await axios.get(
-            `${API_BASE_URL}/meetings/${recommendedId}`
-          );
+          // ⭐ meetingId 확인
+          if (!response.data.meetingId) {
+            console.error("❌ meetingId 없음:", response.data);
+            set({ aiRecommendation: null });
+            return;
+          }
 
-          // Spring 응답 구조 대응 필요하면 여기서도 data.meeting 등 처리
-          set({ aiRecommendation: meetingResponse.data });
+          // ⭐ Meeting 객체 생성
+          const meeting: Meeting = {
+            meetingId: response.data.meetingId,
+            title: response.data.title || "제목 없음",
+            description: response.data.description || "",
+            category: response.data.category || "",
+            subcategory: response.data.subcategory || "",
+            locationName:
+              response.data.locationName ||
+              response.data.location ||
+              "위치 미정",
+            meetingTime: response.data.meetingTime || new Date().toISOString(),
+            maxParticipants: response.data.maxParticipants || 0,
+            currentParticipants: response.data.currentParticipants || 0,
+            expectedCost: response.data.expectedCost || 0,
+            vibe: response.data.vibe || "",
+            imageUrl: response.data.imageUrl,
+            avgRating: response.data.avgRating,
+            organizerId: response.data.organizerId || 0,
+          };
+
+          console.log("✅ Meeting 객체 생성 완료:", meeting);
+          set({ aiRecommendation: meeting });
         } catch (error) {
           console.error("❌ AI 추천 조회 실패:", error);
+          if (axios.isAxiosError(error)) {
+            console.error("응답 상태:", error.response?.status);
+            console.error("응답 데이터:", error.response?.data);
+          }
           set({ aiRecommendation: null });
         }
       },

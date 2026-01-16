@@ -350,8 +350,8 @@ class AIRecommendationService:
                     return d.get(k)
             return default
 
-        if not model_loader.lightgbm or not model_loader.lightgbm.is_loaded():
-            raise RuntimeError("LightGBM 모델이 로드되지 않았습니다.")
+        if not model_loader.regressor or not model_loader.regressor.is_loaded():
+            raise RuntimeError("LightGBM Regressor 모델이 로드되지 않았습니다.")
         if not model_loader.feature_builder:
             raise RuntimeError("FeatureBuilder가 로드되지 않았습니다.")
 
@@ -388,7 +388,7 @@ class AIRecommendationService:
             return []
 
         X = np.vstack(rows)
-        preds = model_loader.lightgbm.predict(X)
+        preds = model_loader.regressor.predict(X)
 
         results = []
         for m, feat, p in zip(valid_candidates, feats, preds):

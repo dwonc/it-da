@@ -6,6 +6,7 @@ import com.project.itda.domain.participation.dto.response.ParticipantListRespons
 import com.project.itda.domain.participation.dto.response.ParticipationResponse;
 import com.project.itda.domain.participation.service.ParticipationService;
 import com.project.itda.domain.user.entity.User;
+import com.project.itda.domain.user.repository.UserRepository;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -30,6 +31,7 @@ import java.util.List;
 public class ParticipationController {
 
     private final ParticipationService participationService;
+    private final UserRepository userRepository;
 
     /**
      * 모임 참여 신청
@@ -40,11 +42,14 @@ public class ParticipationController {
     )
     @PostMapping
     public ResponseEntity<ParticipationResponse> applyParticipation(
-            @AuthenticationPrincipal User user,
+            @AuthenticationPrincipal Long userId,
             @Valid @RequestBody ParticipationRequest request
     ) {
         log.info("📍 POST /api/participations - userId: {}, meetingId: {}",
-                user.getUserId(), request.getMeetingId());
+                userId, request.getMeetingId());
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
 
         ParticipationResponse response = participationService.applyParticipation(user, request);
 
@@ -60,12 +65,15 @@ public class ParticipationController {
     )
     @PostMapping("/{participationId}/approve")
     public ResponseEntity<ParticipationResponse> approveParticipation(
-            @AuthenticationPrincipal User user,
+            @AuthenticationPrincipal Long userId,
             @Parameter(description = "참여 ID", required = true)
             @PathVariable Long participationId
     ) {
         log.info("📍 POST /api/participations/{}/approve - userId: {}",
-                participationId, user.getUserId());
+                participationId, userId);
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
 
         ParticipationResponse response = participationService.approveParticipation(user, participationId);
 
@@ -81,13 +89,16 @@ public class ParticipationController {
     )
     @PostMapping("/{participationId}/reject")
     public ResponseEntity<ParticipationResponse> rejectParticipation(
-            @AuthenticationPrincipal User user,
+            @AuthenticationPrincipal Long userId,
             @Parameter(description = "참여 ID", required = true)
             @PathVariable Long participationId,
             @Valid @RequestBody ParticipationStatusRequest request
     ) {
         log.info("📍 POST /api/participations/{}/reject - userId: {}",
-                participationId, user.getUserId());
+                participationId, userId);
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
 
         ParticipationResponse response = participationService.rejectParticipation(
                 user, participationId, request
@@ -105,12 +116,15 @@ public class ParticipationController {
     )
     @DeleteMapping("/{participationId}")
     public ResponseEntity<Void> cancelParticipation(
-            @AuthenticationPrincipal User user,
+            @AuthenticationPrincipal Long userId,
             @Parameter(description = "참여 ID", required = true)
             @PathVariable Long participationId
     ) {
         log.info("📍 DELETE /api/participations/{} - userId: {}",
-                participationId, user.getUserId());
+                participationId, userId);
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
 
         participationService.cancelParticipation(user, participationId);
 
@@ -145,13 +159,11 @@ public class ParticipationController {
     )
     @GetMapping("/my")
     public ResponseEntity<List<ParticipationResponse>> getMyParticipations(
-            @AuthenticationPrincipal User user
+            @AuthenticationPrincipal Long userId
     ) {
-        log.info("📍 GET /api/participations/my - userId: {}", user.getUserId());
+        log.info("📍 GET /api/participations/my - userId: {}", userId);
 
-        List<ParticipationResponse> responses = participationService.getParticipationsByUserId(
-                user.getUserId()
-        );
+        List<ParticipationResponse> responses = participationService.getParticipationsByUserId(userId);
 
         return ResponseEntity.ok(responses);
     }

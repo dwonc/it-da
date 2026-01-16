@@ -1,8 +1,11 @@
 package com.project.itda.domain.ai.controller;
 
+import com.project.itda.domain.ai.dto.request.MatchScoresRequest;
+import com.project.itda.domain.ai.dto.request.MatchScoresRequestDto;
 import com.project.itda.domain.ai.dto.request.SentimentAnalysisRequest;
 import com.project.itda.domain.ai.dto.response.*;
 import com.project.itda.domain.ai.service.*;
+import com.project.itda.domain.meeting.entity.Meeting;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -11,7 +14,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * AI 추천 컨트롤러 (통합 완성)
@@ -28,6 +34,8 @@ public class AiRecommendationController {
     private final PlaceRecommendService placeRecommendService;
     private final SentimentAnalysisService sentimentAnalysisService;
     private final AIServiceClient aiServiceClient;
+    private final MatchScoreService matchScoreService;  // ✅ 추가
+    private final PersonalizedRecommendService personalizedRecommendService;
 
     // ========================================================================
     // Step 2: SVD 모임 추천
@@ -185,4 +193,131 @@ public class AiRecommendationController {
 
         return ResponseEntity.ok(modelsInfo);
     }
+
+
+    /**
+     * AI 매칭률 조회
+     *
+     * GET /api/ai/recommendations/match-score?userId=121&meetingId=102
+     */
+    @Operation(
+            summary = "AI 매칭률 조회",
+            description = "SVD 협업 필터링을 사용하여 사용자와 모임의 매칭률을 계산합니다"
+    )
+    @GetMapping("/match-score")
+    public ResponseEntity<MatchScoreDTO> getMatchScore(
+            @Parameter(description = "사용자 ID", required = true)
+            @RequestParam Long userId,
+
+            @Parameter(description = "모임 ID", required = true)
+            @RequestParam Long meetingId
+    ) {
+        log.info("📍 GET /api/ai/recommendations/match-score - userId: {}, meetingId: {}",
+                userId, meetingId);
+
+        MatchScoreDTO response = matchScoreService.getMatchScore(userId, meetingId);
+
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/match-scores")
+    public ResponseEntity<?> getMatchScores(@RequestBody MatchScoresRequestDto req) {
+        if (req.getUserId() == null) throw new IllegalArgumentException("userId is required");
+        if (req.getMeetingIds() == null || req.getMeetingIds().isEmpty()) {
+            return ResponseEntity.ok(new MatchScoresResponse(true, req.getUserId(), List.of()));
+        }
+        return ResponseEntity.ok(matchScoreService.getMatchScores(req.getUserId(), req.getMeetingIds()));
+    }
+
+    /**
+     * ⭐ 개인화 AI 추천 - 내부 호출용 (POST)
+     * POST /api/ai/recommendations/personalized-internal
+     */
+    @PostMapping("/personalized-internal")
+    public ResponseEntity<Map<String, Object>> getPersonalizedRecommendationInternal(
+            @RequestParam Long userId
+    ) {
+        log.info("🎯 개인화 추천 내부 요청: userId={}", userId);
+
+        try {
+            Meeting meeting = personalizedRecommendService.getPersonalizedRecommendation(userId);
+
+            if (meeting == null) {
+                return ResponseEntity.ok(Map.of(
+                        "success", false,
+                        "message", "추천 가능한 모임이 없습니다"
+                ));
+            }
+
+            Map<String, Object> response = buildMeetingResponse(meeting);
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            log.error("❌ 개인화 추천 실패: {}", e.getMessage(), e);
+            return ResponseEntity.ok(Map.of(
+                    "success", false,
+                    "message", e.getMessage()
+            ));
+        }
+    }
+
+    /**
+     * ⭐ 개인화 AI 추천 - 프론트 호출용 (GET)
+     * GET /api/ai/recommendations/personalized/{userId}
+     */
+    @GetMapping("/personalized/{userId}")
+    public ResponseEntity<Map<String, Object>> getPersonalizedRecommendation(
+            @PathVariable Long userId
+    ) {
+        log.info("🎯 개인화 추천 요청: userId={}", userId);
+
+        try {
+            Meeting meeting = personalizedRecommendService.getPersonalizedRecommendation(userId);
+
+            if (meeting == null) {
+                return ResponseEntity.ok(Map.of(
+                        "success", false,
+                        "message", "추천 가능한 모임이 없습니다"
+                ));
+            }
+
+            Map<String, Object> response = buildMeetingResponse(meeting);
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            log.error("❌ 개인화 추천 실패: {}", e.getMessage(), e);
+            return ResponseEntity.ok(Map.of(
+                    "success", false,
+                    "message", e.getMessage()
+            ));
+        }
+    }
+
+    // ⭐ 공통 응답 빌더
+    private Map<String, Object> buildMeetingResponse(Meeting meeting) {
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("meetingId", meeting.getMeetingId());
+        response.put("title", meeting.getTitle());
+        response.put("description", meeting.getDescription());
+        response.put("category", meeting.getCategory());
+        response.put("subcategory", meeting.getSubcategory());
+        response.put("locationName", meeting.getLocationName());
+        response.put("location", meeting.getLocationName());
+        response.put("meetingTime", meeting.getMeetingTime().toString());
+        response.put("meetingDate", meeting.getMeetingTime().toLocalDate().toString());
+        response.put("dayOfWeek", meeting.getMeetingTime().getDayOfWeek()
+                .getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.KOREAN));
+        response.put("maxParticipants", meeting.getMaxParticipants());
+        response.put("currentParticipants", meeting.getCurrentParticipants());
+        response.put("expectedCost", meeting.getExpectedCost());
+        response.put("vibe", meeting.getVibe());
+        response.put("imageUrl", meeting.getImageUrl());
+        response.put("avgRating", meeting.getAvgRating());
+        response.put("organizerId", meeting.getOrganizer().getUserId());
+        response.put("matchScore", 70);
+        response.put("ageRange", "20-30대");
+        return response;
+    }
+
 }

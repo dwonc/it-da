@@ -209,3 +209,68 @@ class SVDModel:
     def is_loaded(self) -> bool:
         """로드 여부 확인"""
         return self.meeting_similarity is not None
+
+    async def predict_for_user_meeting(self, user_id: int, meeting_id: int) -> float:
+        """
+        특정 user-meeting에 대한 예측 평점(1~5)을 계산한다.
+        - 유저가 이미 평가한 모임이면 그 평점을 우선 반환
+        - 유저 평점이 없으면 meeting 평균으로 fallback
+        - 유사도 기반으로 예측 가능하면 예측값 반환
+        """
+        if not self.is_loaded():
+            raise ValueError("Model not loaded. Call load() first.")
+
+        # 1) 유저 평점 조회
+        user_ratings_dict = await self._get_user_ratings(user_id)
+
+        # (핵심) 이미 평가한 모임이면 그 점수를 그대로 사용(혹은 약간 보정)
+        if meeting_id in user_ratings_dict:
+            return float(np.clip(user_ratings_dict[meeting_id], 1.0, 5.0))
+
+        # 2) 유저 데이터 없으면 모임 평균으로 fallback
+        if not user_ratings_dict:
+            meeting_avg = self.meeting_stats[self.meeting_stats["meeting_id"] == meeting_id]["avg_rating"].values
+            return float(meeting_avg[0]) if len(meeting_avg) > 0 else 3.0
+
+        # 3) meeting_id가 모델에 없으면 평균 fallback
+        if self.meeting_similarity is None or meeting_id not in self.meeting_similarity.index:
+            meeting_avg = self.meeting_stats[self.meeting_stats["meeting_id"] == meeting_id]["avg_rating"].values
+            return float(meeting_avg[0]) if len(meeting_avg) > 0 else 3.0
+
+        # 4) 유사도 기반 예측
+        rated_meeting_ids = list(user_ratings_dict.keys())
+
+        sims = []
+        for rated_id in rated_meeting_ids:
+            if rated_id in self.meeting_similarity.columns:  # 또는 index/columns 둘 다 맞추기
+                sim = float(self.meeting_similarity.loc[meeting_id, rated_id])
+                sims.append((rated_id, sim))
+
+        if not sims:
+            meeting_avg = self.meeting_stats[self.meeting_stats["meeting_id"] == meeting_id]["avg_rating"].values
+            return float(meeting_avg[0]) if len(meeting_avg) > 0 else 3.0
+
+        sims.sort(key=lambda x: x[1], reverse=True)
+        top_similar = sims[:10]
+        sim_sum = sum(sim for _, sim in top_similar)
+
+        if sim_sum <= 0:
+            meeting_avg = self.meeting_stats[self.meeting_stats["meeting_id"] == meeting_id]["avg_rating"].values
+            return float(meeting_avg[0]) if len(meeting_avg) > 0 else 3.0
+
+        weighted_sum = sum(sim * user_ratings_dict[rated_id] for rated_id, sim in top_similar)
+        predicted = weighted_sum / sim_sum
+
+        # 모임 평균 반영
+        meeting_avg = self.meeting_stats[self.meeting_stats["meeting_id"] == meeting_id]["avg_rating"].values
+        if len(meeting_avg) > 0:
+            predicted = 0.7 * predicted + 0.3 * float(meeting_avg[0])
+
+        return float(np.clip(predicted, 1.0, 5.0))
+
+    async def predict_for_user_meetings(self, user_id: int, meeting_ids: list[int]) -> dict[int, float]:
+        out = {}
+        for mid in meeting_ids:
+            out[int(mid)] = float(await self.predict_for_user_meeting(user_id, int(mid)))
+        return out
+

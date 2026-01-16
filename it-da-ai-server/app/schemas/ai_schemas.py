@@ -20,3 +20,4 @@ class AISearchResponse(BaseModel):
     total_candidates: int
     recommendations: List[Dict]
     fallback: Optional[bool] = False
+

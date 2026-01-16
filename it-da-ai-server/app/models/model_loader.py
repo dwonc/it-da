@@ -2,7 +2,8 @@
 Model Loader - 모든 AI 모델 통합 관리
 """
 
-from app.models.lightgbm_model import LightGBMRankerModel
+from app.models.lightgbm_ranker_model import LightGBMRankerModel
+from app.models.lightgbm_regressor import LightGBMRegressorModel
 from app.models.kcelectra_model import KcELECTRAModel
 from app.models.svd_model import SVDModel
 from app.core.feature_builder import FeatureBuilder
@@ -27,7 +28,8 @@ class ModelLoader:
             return
 
         # 모델 초기화
-        self.lightgbm: Optional[LightGBMRankerModel] = None
+        self.ranker: Optional[LightGBMRankerModel] = None      # ✅ Ranker (검색/피드용)
+        self.regressor: Optional[LightGBMRegressorModel] = None   # ✅ Regressor (만족도 예측용)
         self.kcelectra: Optional[KcELECTRAModel] = None
         self.svd: Optional[SVDModel] = None
         self.feature_builder: Optional[FeatureBuilder] = None
@@ -42,22 +44,34 @@ class ModelLoader:
 
         try:
             # 1. FeatureBuilder
-            print("\n[1/4] FeatureBuilder 초기화...")
+            print("\n[1/5] FeatureBuilder 초기화...")
             self.feature_builder = FeatureBuilder()
             print("✅ FeatureBuilder 준비 완료")
 
-            # 2. LightGBM Ranker
-            print("\n[2/4] LightGBM Ranker 로딩...")
-            self.lightgbm = LightGBMRankerModel()
-            self.lightgbm.load()
+            # 2. LightGBM Ranker (검색/피드용)
+            print("\n[2/5] LightGBM Ranker 로딩...")
+            self.ranker = LightGBMRankerModel(
+                model_path="models/lightgbm_ranker.pkl",
+                calib_path="models/lightgbm_ranker_calibration.json"
+            )
+            self.ranker.load()
 
-            # 3. KcELECTRA
-            print("\n[3/4] KcELECTRA 로딩...")
+            # 3. LightGBM Regressor (만족도 예측용)
+            print("\n[3/5] LightGBM Regressor 로딩...")
+            self.regressor = LightGBMRegressorModel(
+                model_path="models/lightgbm_regressor.pkl"  # ✅ Regressor 파일
+            )
+
+            self.regressor.load()
+
+
+            # 4. KcELECTRA
+            print("\n[4/5] KcELECTRA 로딩...")
             self.kcelectra = KcELECTRAModel()
             self.kcelectra.load()
 
-            # 4. SVD
-            print("\n[4/4] SVD 모델 로딩...")
+            # 5. SVD
+            print("\n[5/5] SVD 모델 로딩...")
             self.svd = SVDModel()
             self.svd.load()
 
@@ -73,7 +87,8 @@ class ModelLoader:
         """모든 모델이 준비되었는지 확인"""
         return (
                 self.feature_builder is not None and
-                self.lightgbm is not None and self.lightgbm.is_loaded() and
+                self.ranker is not None and self.ranker.is_loaded() and
+                self.regressor is not None and self.regressor.is_loaded() and
                 self.kcelectra is not None and self.kcelectra.is_loaded() and
                 self.svd is not None and self.svd.is_loaded()
         )
@@ -82,12 +97,12 @@ class ModelLoader:
         """모델 상태 반환"""
         return {
             "feature_builder": self.feature_builder is not None,
-            "lightgbm": self.lightgbm is not None and self.lightgbm.is_loaded(),
+            "ranker": self.ranker is not None and self.ranker.is_loaded(),
+            "regressor": self.regressor is not None and self.regressor.is_loaded(),
             "kcelectra": self.kcelectra is not None and self.kcelectra.is_loaded(),
             "svd": self.svd is not None and self.svd.is_loaded(),
             "ready": self.is_ready()
         }
-
 
 # 싱글톤 인스턴스
 model_loader = ModelLoader()

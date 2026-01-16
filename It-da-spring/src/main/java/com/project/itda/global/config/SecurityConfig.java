@@ -1,5 +1,6 @@
 package com.project.itda.global.config;
 
+import com.project.itda.global.security.SessionAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -24,6 +25,7 @@ public class SecurityConfig {
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
+    private final SessionAuthenticationFilter sessionAuthenticationFilter;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -37,6 +39,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/files/**").permitAll()
                         .anyRequest().permitAll() // 일단 전체 허용 (테스트용)
                 )
+                .addFilterBefore(sessionAuthenticationFilter,
+                        org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class)
 
                 // ✅ Redis 세션 관리 설정 추가
                 .sessionManagement(session -> session
@@ -55,6 +59,10 @@ public class SecurityConfig {
                 .oauth2Login(oauth2 -> oauth2
                 // 로그인 성공 시 프론트엔드(3000) 콜백 페이지로 이동시킵니다.
                 .defaultSuccessUrl("http://localhost:3000/auth/callback", true)
+                        // ✅ 여기!
+
+
+
         );
 
         return http.build();

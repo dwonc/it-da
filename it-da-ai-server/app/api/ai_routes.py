@@ -1,13 +1,19 @@
 """
 AI Routes for Spring Boot Integration
 """
+import random
 
-from fastapi import APIRouter, HTTPException,Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
+import time
+import math
+
+import app
 from app.models.model_loader import model_loader
 from app.core.logging import logger
-from typing import Dict
 from app.schemas.ai_schemas import AISearchRequest, AISearchResponse
 from app.services.gpt_prompt_service import GPTPromptService
 from app.services.AIRecommendationService import AIRecommendationService
@@ -21,19 +27,55 @@ router = APIRouter(prefix="/api/ai/recommendations", tags=["AI"])
 # Request/Response Models (Spring Boot 호환)
 # ========================================
 
-class RecommendRequest(BaseModel):
+class MatchScoresRequest(BaseModel):
     user_id: int
-    top_n: int = 10
+    meeting_ids: List[int]   # 현재 화면 카드들
 
-class RecommendResponse(BaseModel):
+class CandidateMeetingRequest(BaseModel):
+    """후보 모임 정보 - Spring Boot 완전 호환"""
+
+    meetingId: int = Field(alias="meeting_id")
+    latitude: float
+    longitude: float
+    category: str
+    subcategory: str
+
+    # snake_case와 camelCase 모두 지원
+    timeSlot: str = Field(alias="time_slot")
+    locationType: str = Field(alias="location_type")
+    vibe: str
+    maxParticipants: int = Field(alias="max_participants")
+    expectedCost: int = Field(alias="expected_cost")
+
+    # Optional 필드
+    avgRating: Optional[float] = Field(None, alias="avg_rating")
+    ratingCount: Optional[int] = Field(None, alias="rating_count")
+    currentParticipants: int = Field(alias="current_participants")
+
+    class Config:
+        populate_by_name = True  # ⭐ 핵심 설정
+        allow_population_by_field_name = True
+
+class PersonalizedRecommendRequest(BaseModel):
     user_id: int
-    recommended_meetings: List[Dict]  # [{"meeting_id": 1, "predicted_score": 4.5, "rank": 1}]
-    total_count: int
+    user_lat: float
+    user_lng: float
+    user_interests: str
+    user_time_preference: str
+    user_location_pref: str
+    user_budget_type: str
+    user_energy_type: str = "EXTROVERT"
+    user_leadership_type: str = "FOLLOWER"
+    user_frequency_type: str = "REGULAR"
+    user_purpose_type: str = "TASK"
+    user_avg_rating: float
+    user_meeting_count: int
+    user_rating_std: float
+    candidate_meetings: List[CandidateMeetingRequest]
 
 class SatisfactionRequest(BaseModel):
     user_id: int
     meeting_id: int
-    # Spring Boot에서 전달받을 사용자/모임 정보
     user_lat: float
     user_lng: float
     user_interests: str
@@ -56,43 +98,16 @@ class SatisfactionRequest(BaseModel):
     meeting_rating_count: int = 0
     meeting_participant_count: int = 0
 
-class SatisfactionResponse(BaseModel):
-    user_id: int
-    meeting_id: int
-    predicted_rating: float
-    rating_stars: str
-    satisfaction_level: str
-    recommended: bool
-    reasons: List[Dict]  # [{"icon": "📍", "text": "..."}]
-
 class SentimentRequest(BaseModel):
     text: str
 
-class SentimentResponse(BaseModel):
-    text: str
-    sentiment: str
-    score: float
-    probabilities: Dict[str, float]
-
 class CentroidRequest(BaseModel):
-    user_locations: List[Dict[str, float]]  # [{"latitude": 37.5, "longitude": 127.0}]
-
-class CentroidResponse(BaseModel):
-    centroid: Dict[str, float]
-    address: Optional[str] = None
+    user_locations: List[Dict[str, float]]
 
 class PlaceRecommendRequest(BaseModel):
-    participants: List[Dict]  # [{"user_id": 1, "latitude": 37.5, "longitude": 127.0}]
+    participants: List[Dict]
     category: Optional[str] = "카페"
     max_distance: Optional[float] = 3.0
-
-class PlaceRecommendResponse(BaseModel):
-    success: bool
-    centroid: Dict[str, float]
-    search_radius: float
-    recommendations: List[Dict]
-    filtered_count: Dict[str, int]
-    processing_time_ms: int
 
 # ========================================
 # Utility Functions
@@ -157,7 +172,95 @@ def build_reasons(feat: dict) -> List[Dict]:
             "text": "관심사와 카테고리가 잘 맞아요"
         })
 
-    return reasons[:3]
+    # 최소 3개 보장
+    if len(reasons) < 3:
+        reasons.extend([
+            {"icon": "👥", "text": "적당한 인원이에요"},
+            {"icon": "🌟", "text": "새로운 경험을 시작하기 좋아요"},
+            {"icon": "😊", "text": "즐거운 시간이 될 거예요"},
+        ])
+
+    return reasons[:5]
+
+def rank_score_to_rating(score: float, calib: Optional[dict] = None) -> float:
+    """
+    Ranker raw score(무제한) -> 1~5 평점으로 매핑.
+    - calibration에 min/max가 있으면 min-max
+    - 없으면 sigmoid 기반으로 완만하게
+    """
+    if calib and "min" in calib and "max" in calib and calib["max"] > calib["min"]:
+        s = (score - calib["min"]) / (calib["max"] - calib["min"])
+        s = clamp(s, 0.0, 1.0)
+    else:
+        # fallback: sigmoid
+        s = 1.0 / (1.0 + math.exp(-score))
+
+    rating = 1.0 + 4.0 * s
+    return round(clamp(rating, 1.0, 5.0), 1)
+
+def rating_to_match_score(rating: float) -> int:
+    # 1~5 -> 0~100
+    return int(clamp(round((rating - 1.0) / 4.0 * 100), 0, 100))
+
+def rating_to_match_score_nonlinear(rating: float, center: float = 3.6, temp: float = 0.22) -> int:
+    # rating(1~5)을 sigmoid로 0~100으로 펴기
+    z = (rating - center) / temp
+    s = 1 / (1 + math.exp(-z))
+    return int(round(100 * s))
+
+def rating_to_match_score_sigmoid(r, mid=3.5, temp=0.35):
+    # r: 1~5
+    z = (r - mid) / temp
+    s = 1/(1+math.exp(-z))
+    return int(clamp(round(s*100), 0, 100))
+
+def sigmoid(x: float) -> float:
+    return 1.0 / (1.0 + math.exp(-x))
+
+def percentile_rank(value: float, values: List[float]) -> float:
+    """
+    0~1 범위 퍼센타일 (value가 values에서 상위 몇 %인지)
+    - tie는 중간값 느낌으로 처리
+    """
+    if not values:
+        return 0.5
+    values_sorted = sorted(values)
+    n = len(values_sorted)
+    # <= 개수 / n : 0~1
+    le = sum(v <= value for v in values_sorted)
+    return le / n
+
+def match_from_percentile(p: float, floor: int = 25, ceil: int = 99, gamma: float = 1.35) -> int:
+    """
+    퍼센타일(0~1) -> 0~100 점수
+    - floor~ceil 사이로 제한
+    - gamma > 1 : 상위권이 더 치솟게(드라마틱)
+    """
+    p = max(0.0, min(1.0, p))
+    # 상위권 강조
+    shaped = p ** gamma
+    score = floor + (ceil - floor) * shaped
+    return int(round(max(0, min(100, score))))
+
+_MATCH_DIST_CACHE: Dict[int, Tuple[float, List[float]]] = {}  # user_id -> (ts, dist_ratings)
+_MATCH_CACHE_TTL_SEC = 30  # 30초만 캐시
+
+def get_cached_dist(user_id: int) -> List[float] | None:
+    hit = _MATCH_DIST_CACHE.get(user_id)
+    if not hit:
+        return None
+    ts, dist = hit
+    if time.time() - ts > _MATCH_CACHE_TTL_SEC:
+        _MATCH_DIST_CACHE.pop(user_id, None)
+        return None
+    return dist
+
+def set_cached_dist(user_id: int, dist: List[float]):
+    _MATCH_DIST_CACHE[user_id] = (time.time(), dist)
+
+def stretch(p: float, k: float = 1.8) -> float:
+    # k > 1 : 0.5 기준으로 양끝으로 벌림
+    return max(0.0, min(1.0, 0.5 + (p - 0.5) * k))
 
 # ========================================
 # Dependency Injection
@@ -177,10 +280,177 @@ def get_ai_recommendation_service(
     spring_boot_url = os.getenv("SPRING_BOOT_URL", "http://localhost:8080")
     return AIRecommendationService(gpt_service, spring_boot_url)
 
-
 # ========================================
 # API Endpoints
 # ========================================
+
+@router.post("/personalized-recommendation")
+async def get_personalized_recommendation(request: PersonalizedRecommendRequest):
+    """개인화 AI 추천 - 사용자 성향 반영"""
+    try:
+        logger.info(
+            f"🎯 개인화 추천: user_id={request.user_id}, energy={request.user_energy_type}, leadership={request.user_leadership_type}")
+
+        if not model_loader.regressor or not model_loader.regressor.is_loaded():
+            raise HTTPException(status_code=503, detail="Regressor 모델 미로드")
+
+        # 사용자 정보
+        user = {
+            "lat": request.user_lat,
+            "lng": request.user_lng,
+            "interests": request.user_interests,
+            "time_preference": request.user_time_preference,
+            "user_location_pref": request.user_location_pref,
+            "budget_type": request.user_budget_type,
+            "user_avg_rating": request.user_avg_rating,
+            "user_meeting_count": request.user_meeting_count,
+            "user_rating_std": request.user_rating_std,
+
+            # ⭐ 성향 정보
+            "energy_type": request.user_energy_type,
+            "leadership_type": request.user_leadership_type,
+            "frequency_type": request.user_frequency_type,
+            "purpose_type": request.user_purpose_type,
+        }
+
+        scored_meetings = []
+
+        logger.info(f"[DBG] regressor wrapper class = {model_loader.regressor.__class__.__name__}")
+
+        inner = getattr(model_loader.regressor, "model", None)
+        logger.info(f"[DBG] regressor inner model type = {type(inner)}")
+
+        for meeting_data in request.candidate_meetings:
+            try:
+                # ⭐ .get() 대신 직접 속성 접근
+                meeting = {
+                    "lat": meeting_data.latitude,
+                    "lng": meeting_data.longitude,
+                    "category": meeting_data.category,
+                    "subcategory": meeting_data.subcategory,
+                    "time_slot": meeting_data.timeSlot,
+                    "meeting_location_type": meeting_data.locationType,
+                    "vibe": meeting_data.vibe,
+                    "max_participants": meeting_data.maxParticipants,
+                    "expected_cost": meeting_data.expectedCost,
+                    "meeting_avg_rating": meeting_data.avgRating or 0.0,
+                    "meeting_rating_count": meeting_data.ratingCount or 0,
+                    "meeting_participant_count": meeting_data.currentParticipants,
+                }
+
+                # Feature 추출
+                feat, x = model_loader.feature_builder.build(user, meeting)
+
+                # ⭐ 성향 기반 보너스 점수
+                bonus_score = calculate_personality_bonus(user, meeting)
+
+                # Regressor 예측
+                import numpy as np
+                predicted_rating = model_loader.regressor.predict(x)[0]
+                predicted_rating = float(np.clip(predicted_rating + bonus_score, 1.0, 5.0))
+
+                scored_meetings.append({
+                    "meeting_id": meeting_data.meetingId,  # ⭐ 직접 접근
+                    "predicted_rating": round(predicted_rating, 2),
+                    "bonus_score": round(bonus_score, 2),
+                    "meeting_data": meeting_data
+                })
+
+            except Exception as e:
+                logger.warning(f"⚠️ 모임 {meeting_data.meetingId} 점수 계산 실패: {e}")  # ⭐ 직접 접근
+                continue
+
+        if not scored_meetings:
+            return {"success": False, "message": "추천 불가", "recommendation": None}
+
+        # 점수 높은 순 정렬
+        scored_meetings.sort(key=lambda x: x["predicted_rating"], reverse=True)
+
+        top_k = 10
+        top_list = scored_meetings[:top_k]
+
+        # seed가 있으면 seed로, 없으면 랜덤
+        seed = getattr(request, "seed", None)
+        rng = random.Random(seed) if seed is not None else random.Random()
+
+        # 1등만 고르지 말고 top_k 중에서 뽑기 (확률 가중도 가능)
+        picked = rng.choice(top_list)
+
+        best = picked
+
+        logger.info(f"✅ 추천완료: id={best['meeting_id']}, rating={best['predicted_rating']}, bonus={best['bonus_score']}")
+
+        return {
+            "success": True,
+            "recommendation": {
+                "meetingId": best["meeting_data"].meetingId,
+                "latitude": best["meeting_data"].latitude,
+                "longitude": best["meeting_data"].longitude,
+                "category": best["meeting_data"].category,
+                "subcategory": best["meeting_data"].subcategory,
+                "timeSlot": best["meeting_data"].timeSlot,
+                "locationType": best["meeting_data"].locationType,
+                "vibe": best["meeting_data"].vibe,
+                "maxParticipants": best["meeting_data"].maxParticipants,
+                "expectedCost": best["meeting_data"].expectedCost,
+                "avgRating": best["meeting_data"].avgRating,
+                "ratingCount": best["meeting_data"].ratingCount,
+                "currentParticipants": best["meeting_data"].currentParticipants,
+            },
+            "predicted_rating": best["predicted_rating"],
+            "bonus_score": best["bonus_score"],
+            "top_candidates": [
+                {"meetingId": x["meeting_id"], "rating": x["predicted_rating"]}
+                for x in top_list
+            ],
+            "total_candidates": len(request.candidate_meetings),
+            "scored_count": len(scored_meetings)
+        }
+
+    except Exception as e:
+        logger.error(f"❌ 추천 실패: {e}", exc_info=True)
+        return {"success": False, "message": str(e), "recommendation": None}
+
+
+def calculate_personality_bonus(user: dict, meeting: dict) -> float:
+    """⭐ 사용자 성향 기반 보너스 점수 (DB Enum 기준)"""
+    bonus = 0.0
+
+    # 1. EnergyType (외향형/내향형)
+    max_parts = meeting.get("max_participants", 5)  # ✅ 이건 dict이므로 .get() 사용
+    energy = user.get("energy_type", "").upper()
+
+    if energy == "EXTROVERT" and max_parts >= 6:
+        bonus += 0.35
+    elif energy == "INTROVERT" and max_parts <= 4:
+        bonus += 0.35
+
+    # 2. LeadershipType
+    leadership = user.get("leadership_type", "").upper()
+    if leadership == "LEADER":
+        bonus += 0.15
+
+    # 3. PurposeType
+    purpose = user.get("purpose_type", "").upper()
+    vibe = meeting.get("vibe", "").lower()
+
+    if purpose == "RELATIONSHIP" and vibe in ["friendly", "social", "chill"]:
+        bonus += 0.3
+    elif purpose == "TASK" and vibe in ["focused", "productive", "energetic"]:
+        bonus += 0.3
+
+    # 4. FrequencyType
+    frequency = user.get("frequency_type", "").upper()
+    if frequency == "REGULAR":
+        bonus += 0.1
+
+    # 5. 관심사 매칭
+    interests = user.get("interests", "[]")
+    category = meeting.get("category", "")
+    if category in interests:
+        bonus += 0.25
+
+    return min(bonus, 1.2)
 
 @router.get("/health")
 async def health_check():
@@ -194,9 +464,36 @@ async def health_check():
         "models": model_loader.get_status()
     }
 
+@router.get("/models")
+async def get_models_info():
+    return {
+        "models": model_loader.get_status(),
+        "svd": {
+            "loaded": model_loader.svd.is_loaded() if model_loader.svd else False,
+            "user_count": len(model_loader.svd.user_ids) if model_loader.svd and model_loader.svd.user_ids else 0,
+            "meeting_count": len(model_loader.svd.meeting_ids) if model_loader.svd and model_loader.svd.meeting_ids else 0
+        } if model_loader.svd else {},
+        "lightgbm": {
+            "ranker_loaded": model_loader.ranker.is_loaded() if model_loader.ranker else False,
+            "regressor_loaded": model_loader.regressor.is_loaded() if model_loader.regressor else False,
+            "feature_count": len(model_loader.feature_builder.get_feature_names()) if model_loader.feature_builder else 0
+        } if (model_loader.ranker or model_loader.regressor) else {},
+        "kcelectra": {
+            "loaded": model_loader.kcelectra.is_loaded() if model_loader.kcelectra else False,
+            "device": model_loader.kcelectra.device if model_loader.kcelectra else "unknown"
+        } if model_loader.kcelectra else {}
+    }
+
+# ========================================
+# SVD 모임 추천
+# ========================================
 
 @router.get("/meetings")
 async def recommend_meetings(user_id: int, top_n: int = 10):
+    """
+    SVD 협업 필터링 모임 추천
+    GET /api/ai/recommendations/meetings?user_id=121&top_n=20
+    """
     try:
         logger.info(f"🤖 AI 추천 요청: user_id={user_id}, top_n={top_n}")
 
@@ -210,21 +507,21 @@ async def recommend_meetings(user_id: int, top_n: int = 10):
         recommendations = await model_loader.svd.recommend(user_id=user_id, top_n=top_n)
         logger.info(f"✅ SVD 추천 완료: {len(recommendations)}개")
 
-        # Spring DTO(RecommendedMeeting.score) 에 맞추기: score 키로!
         rec_list = [
             {
                 "meeting_id": int(meeting_id),
-                "score": round(float(score), 4),   # ✅ predicted_score -> score
+                "score": round(float(score), 4),
                 "rank": idx + 1
             }
             for idx, (meeting_id, score) in enumerate(recommendations)
         ]
 
         return {
-            "success": True,                 # ✅ 추가 (NPE 방지 + 의미 맞음)
+            "success": True,
             "user_id": user_id,
-            "recommendations": rec_list,     # ✅ recommended_meetings -> recommendations
-            "model_info": {                  # ✅ 있으면 좋음. 없으면 null로라도
+            "recommendations": rec_list,
+            "total_count": len(rec_list),
+            "model_info": {
                 "rmse": None,
                 "mae": None,
                 "accuracy": None
@@ -235,131 +532,50 @@ async def recommend_meetings(user_id: int, top_n: int = 10):
         raise
     except Exception as e:
         logger.error(f"❌ 추천 실패: {str(e)}", exc_info=True)
-        # 실패 응답도 success 넣어주면 Spring이 안정적
         raise HTTPException(status_code=500, detail=f"추천 실패: {str(e)}")
 
-@router.get("/models")
-async def get_models_info():
+# ========================================
+# 만족도 예측 (GET + POST 둘 다 지원)
+# ========================================
+
+@router.get("/satisfaction")
+async def predict_satisfaction_get(userId: int, meetingId: int):
     """
-    AI 모델 정보
-    GET /api/ai/recommendations/models
+    LightGBM 만족도 예측 (GET - Spring Boot 호환)
+    GET /api/ai/recommendations/satisfaction?userId=121&meetingId=102
+
+    ⚠️ Spring Boot Service가 필요한 데이터를 모두 조회해서 POST로 호출해야 함
+    이 GET은 간단한 Mock 응답 반환
     """
+    logger.warning(f"⚠️ GET /satisfaction 호출됨 (userId={userId}, meetingId={meetingId})")
+    logger.warning("⚠️ Spring Boot Service에서 POST /satisfaction을 사용하세요")
+
+    # Mock 응답 반환 (실제로는 POST 사용 권장)
     return {
-        "models": model_loader.get_status(),
-        "svd": {
-            "loaded": model_loader.svd.is_loaded() if model_loader.svd else False,
-            "user_count": len(model_loader.svd.user_ids) if model_loader.svd and model_loader.svd.user_ids else 0,
-            "meeting_count": len(model_loader.svd.meeting_ids) if model_loader.svd and model_loader.svd.meeting_ids else 0
-        } if model_loader.svd else {},
-        "lightgbm": {
-            "loaded": model_loader.lightgbm.is_loaded() if model_loader.lightgbm else False,
-            "feature_count": len(model_loader.feature_builder.get_feature_names()) if model_loader.feature_builder else 0
-        } if model_loader.lightgbm else {},
-        "kcelectra": {
-            "loaded": model_loader.kcelectra.is_loaded() if model_loader.kcelectra else False,
-            "device": model_loader.kcelectra.device if model_loader.kcelectra else "unknown"
-        } if model_loader.kcelectra else {}
+        "success": False,
+        "message": "만족도 예측 실패",
+        "userId": userId,
+        "meetingId": meetingId,
+        "predictedRating": None,
+        "ratingStars": None,
+        "reasons": None,
+        "recommended": None,
+        "satisfactionLevel": None
     }
 
 
-@router.get("/meetings")
-async def recommend_meetings(user_id: int, top_n: int = 10):
-    """
-    SVD 협업 필터링 모임 추천 (실시간 DB 연동)
-    GET /api/ai/recommendations/meetings?userId=3&topN=10
-    """
-    try:
-        if not model_loader.svd or not model_loader.svd.is_loaded():
-            raise HTTPException(status_code=503, detail="SVD 모델이 로드되지 않았습니다")
-
-        # topN 제한
-        if top_n > 50:
-            top_n = 50
-
-        # SVD 추천 (실시간 DB 조회)
-        recommendations = await model_loader.svd.recommend(
-            user_id=user_id,
-            top_n=top_n
-        )
-
-        # 응답 생성
-        recommended_meetings = [
-            {
-                "meeting_id": int(meeting_id),
-                "predicted_score": round(float(score), 4),
-                "rank": idx + 1
-            }
-            for idx, (meeting_id, score) in enumerate(recommendations)
-        ]
-
-        return {
-            "user_id": user_id,
-            "recommended_meetings": recommended_meetings,
-            "total_count": len(recommended_meetings)
-        }
-
-    except Exception as e:
-        logger.error(f"추천 실패: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/recommend")
-async def recommend_meetings_post(request: RecommendRequest):
-    """
-    SVD 협업 필터링 모임 추천 (POST)
-    POST /api/ai/recommendations/recommend
-    """
-    try:
-        if not model_loader.svd or not model_loader.svd.is_loaded():
-            raise HTTPException(status_code=503, detail="SVD 모델이 로드되지 않았습니다")
-
-        # SVD 추천
-        recommendations = model_loader.svd.recommend(
-            user_id=request.user_id,
-            top_n=request.top_n
-        )
-
-        # 응답 생성
-        recommended_meetings = [
-            {
-                "meeting_id": int(meeting_id),
-                "predicted_score": round(float(score), 4),
-                "rank": idx + 1
-            }
-            for idx, (meeting_id, score) in enumerate(recommendations)
-        ]
-
-        return {
-            "user_id": request.user_id,
-            "recommended_meetings": recommended_meetings,
-            "total_count": len(recommended_meetings)
-        }
-
-    except Exception as e:
-        logger.error(f"추천 실패: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/satisfaction")
-async def predict_satisfaction_get(user_id: int, meeting_id: int):
-    """
-    LightGBM Ranker 만족도 예측 (GET)
-    GET /api/ai/recommendations/satisfaction?userId=3&meetingId=15
-
-    Spring Boot에서 사용자/모임 정보를 조회하여 호출해야 함
-    """
-    # Spring Boot가 이 엔드포인트를 직접 호출하지 않음
-    # Spring Boot Service에서 POST로 호출
-    raise HTTPException(status_code=501, detail="Use POST /satisfaction with full data")
-
-
 @router.post("/satisfaction")
-async def predict_satisfaction(request: SatisfactionRequest):
+async def predict_satisfaction_post(request: SatisfactionRequest):
     """
-    LightGBM Ranker 만족도 예측
+    LightGBM Regressor 기반 만족도 예측
+    POST /api/ai/recommendations/satisfaction
     """
     try:
-        if not model_loader.lightgbm or not model_loader.lightgbm.is_loaded():
-            raise HTTPException(status_code=503, detail="LightGBM 모델이 로드되지 않았습니다")
+        logger.info(f"🔍 만족도 예측 요청: user_id={request.user_id}, meeting_id={request.meeting_id}")
+
+        # ✅ Regressor 사용 (개인 성향 반영)
+        if not model_loader.regressor or not model_loader.regressor.is_loaded():
+            raise HTTPException(status_code=503, detail="LightGBM Regressor 모델이 로드되지 않았습니다")
 
         if not model_loader.feature_builder:
             raise HTTPException(status_code=503, detail="FeatureBuilder가 로드되지 않았습니다")
@@ -396,46 +612,71 @@ async def predict_satisfaction(request: SatisfactionRequest):
         # 특징 추출
         feat, x = model_loader.feature_builder.build(user, meeting)
 
-        # 예측
-        pred = model_loader.lightgbm.predict(x)[0]
-        predicted_rating = score_to_rating(float(pred))
+        # ✅ Regressor로 직접 평점 예측 (1~5)
+        import numpy as np
+        predicted_rating = model_loader.regressor.predict(x)[0]
+        predicted_rating = float(np.clip(predicted_rating, 1.0, 5.0))
+        predicted_rating = round(predicted_rating, 1)
+
+        logger.info(f"✅ 만족도 예측 완료: {predicted_rating}/5.0")
 
         return {
-            "user_id": request.user_id,
-            "meeting_id": request.meeting_id,
-            "predicted_rating": predicted_rating,
-            "rating_stars": rating_to_stars(predicted_rating),
-            "satisfaction_level": get_satisfaction_level(predicted_rating),
+            "success": True,
+            "message": "만족도 예측 성공",
+            "userId": request.user_id,
+            "meetingId": request.meeting_id,
+            "predictedRating": predicted_rating,
+            "ratingStars": rating_to_stars(predicted_rating),
+            "satisfactionLevel": get_satisfaction_level(predicted_rating),
             "recommended": predicted_rating >= 3.5,
             "reasons": build_reasons(feat)
         }
 
     except Exception as e:
-        logger.error(f"만족도 예측 실패: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"❌ 만족도 예측 실패: {e}", exc_info=True)
+        return {
+            "success": False,
+            "message": str(e),
+            "userId": request.user_id,
+            "meetingId": request.meeting_id,
+            "predictedRating": None,
+            "ratingStars": None,
+            "satisfactionLevel": None,
+            "recommended": False,
+            "reasons": []
+        }
+
+
+# ========================================
+# 감성 분석
+# ========================================
 
 @router.post("/sentiment")
 async def analyze_sentiment(request: SentimentRequest):
     """
     KcELECTRA 감성 분석
+    POST /api/ai/recommendations/sentiment
     """
     try:
         if not model_loader.kcelectra or not model_loader.kcelectra.is_loaded():
             raise HTTPException(status_code=503, detail="KcELECTRA 모델이 로드되지 않았습니다")
 
-        # 감성 분석
         result = model_loader.kcelectra.predict(request.text)
-
         return result
 
     except Exception as e:
         logger.error(f"감성 분석 실패: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# ========================================
+# 중간지점 계산
+# ========================================
+
 @router.post("/centroid")
 async def calculate_centroid(request: CentroidRequest):
     """
     중간지점 계산
+    POST /api/ai/recommendations/centroid
     """
     try:
         locations = request.user_locations
@@ -443,7 +684,6 @@ async def calculate_centroid(request: CentroidRequest):
         if not locations:
             raise HTTPException(status_code=400, detail="위치 목록이 비어있습니다")
 
-        # 평균 계산
         avg_lat = sum(loc["latitude"] for loc in locations) / len(locations)
         avg_lng = sum(loc["longitude"] for loc in locations) / len(locations)
 
@@ -452,32 +692,24 @@ async def calculate_centroid(request: CentroidRequest):
                 "latitude": round(avg_lat, 6),
                 "longitude": round(avg_lng, 6)
             },
-            "address": None  # TODO: Kakao Maps API 연동
+            "address": None
         }
 
     except Exception as e:
         logger.error(f"중간지점 계산 실패: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/place")
-async def recommend_place_get(meeting_id: int):
-    """
-    장소 추천 (GET)
-    GET /api/ai/recommendations/place?meetingId=15
-
-    Spring Boot가 이 엔드포인트를 직접 호출하지 않음
-    Spring Boot Service에서 POST로 호출
-    """
-    raise HTTPException(status_code=501, detail="Use POST /place with full data")
-
+# ========================================
+# 장소 추천
+# ========================================
 
 @router.post("/place")
 async def recommend_place(request: PlaceRecommendRequest):
     """
     장소 추천 (Kakao Maps 연동 필요)
+    POST /api/ai/recommendations/place
     """
     try:
-        # 중간지점 계산
         locations = [
             {"latitude": p["latitude"], "longitude": p["longitude"]}
             for p in request.participants
@@ -488,13 +720,11 @@ async def recommend_place(request: PlaceRecommendRequest):
 
         centroid = {"latitude": round(avg_lat, 6), "longitude": round(avg_lng, 6)}
 
-        # TODO: Kakao Maps API로 주변 장소 검색
-
         return {
             "success": True,
             "centroid": centroid,
-            "search_radius": request.max_distance * 1000,  # km → m
-            "recommendations": [],  # TODO: Kakao Maps 결과
+            "search_radius": request.max_distance * 1000,
+            "recommendations": [],
             "filtered_count": {"total": 0, "within_radius": 0, "returned": 0},
             "processing_time_ms": 0
         }
@@ -503,55 +733,23 @@ async def recommend_place(request: PlaceRecommendRequest):
         logger.error(f"장소 추천 실패: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# ========================================
+# AI 검색 (GPT)
+# ========================================
 
 @router.post("/search", response_model=AISearchResponse)
-
 async def ai_search(
-        request: AISearchRequest,
-        ai_service: AIRecommendationService = Depends(get_ai_recommendation_service)
+    request: AISearchRequest,
+    ai_service: AIRecommendationService = Depends(get_ai_recommendation_service)
 ):
     """
     GPT 기반 AI 검색 및 추천
-
-    POST /api/ai/search
-
-    Request Body:
-    {
-        "user_prompt": "오늘 저녁 강남에서 러닝할 사람~",
-        "user_id": 3,
-        "top_n": 5
-    }
-
-    Response:
-    {
-        "user_prompt": "...",
-        "parsed_query": {
-            "category": "스포츠",
-            "subcategory": "러닝",
-            "time_slot": "evening",
-            "location_query": "강남",
-            ...
-        },
-        "total_candidates": 42,
-        "recommendations": [
-            {
-                "meeting_id": 42,
-                "title": "한강 선셋 러닝",
-                "match_score": 96,
-                "predicted_rating": 4.8,
-                "key_points": [...],
-                "reasoning": "..."
-            }
-        ]
-    }
+    POST /api/ai/recommendations/search
     """
-
     rid = str(uuid.uuid4())[:8]
     logger.info(f"[RID={rid}] 🔍 AI 검색 요청: user_id={request.user_id}, prompt='{request.user_prompt}'")
 
     try:
-        logger.info(f"🔍 AI 검색 요청: user_id={request.user_id}, prompt='{request.user_prompt}'")
-
         result = await ai_service.get_ai_recommendations(
             user_prompt=request.user_prompt,
             user_id=request.user_id,
@@ -559,23 +757,20 @@ async def ai_search(
         )
 
         logger.info(f"✅ AI 검색 완료: {len(result['recommendations'])}개 추천")
-
         return result
 
     except Exception as e:
         logger.error(f"❌ AI 검색 실패: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.get("/parse-prompt")
 async def parse_prompt(
-        prompt: str,
-        gpt_service: GPTPromptService = Depends(get_gpt_service)
+    prompt: str,
+    gpt_service: GPTPromptService = Depends(get_gpt_service)
 ):
     """
     GPT 프롬프트 파싱 테스트
-
-    GET /api/ai/parse-prompt?prompt=오늘 저녁 강남에서 러닝할 사람
+    GET /api/ai/recommendations/parse-prompt?prompt=오늘 저녁 강남에서 러닝
     """
     try:
         parsed = await gpt_service.parse_search_query(prompt)
@@ -586,3 +781,164 @@ async def parse_prompt(
     except Exception as e:
         logger.error(f"❌ 프롬프트 파싱 실패: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ai_routes.py에 추가할 코드
+
+# ========================================
+# AI 매칭률 계산 (SVD 기반)
+# ========================================
+@router.get("/match-score")
+async def get_match_score(user_id: int, meeting_id: int):
+    try:
+        logger.info(f"🎯 매칭률 계산(Percentile): user_id={user_id}, meeting_id={meeting_id}")
+
+        # SVD 없으면 기본
+        if not model_loader.svd or not model_loader.svd.is_loaded():
+            return {
+                "success": True,
+                "userId": user_id,
+                "meetingId": meeting_id,
+                "matchPercentage": 75,
+                "matchLevel": "MEDIUM",
+                "predictedRating": 3.8,
+                "percentile": None
+            }
+
+        # 1) 타겟 예측
+        target_rating = await model_loader.svd.predict_for_user_meeting(user_id, meeting_id)
+
+        # 2) 비교 분포(캐시 활용)
+        dist = get_cached_dist(user_id)
+        if dist is None:
+            # 추천 top50 (추천이 인기 fallback이면 그래도 분포가 생김)
+            recs = await model_loader.svd.recommend(user_id=user_id, top_n=50)
+            rec_ids = [int(mid) for (mid, _) in recs]
+
+            # rec_ids가 너무 적으면 popular로 보강 (optional)
+            if len(rec_ids) < 30:
+                popular = model_loader.svd._recommend_popular(50)
+                rec_ids = list(dict.fromkeys(rec_ids + [int(mid) for (mid, _) in popular]))[:50]
+
+            # 비교군 rating 계산
+            dist = []
+            for mid in rec_ids:
+                try:
+                    r = await model_loader.svd.predict_for_user_meeting(user_id, mid)
+                    dist.append(float(r))
+                except Exception:
+                    continue
+
+            # dist가 너무 빈약하면 안전장치
+            if len(dist) < 10:
+                dist = [target_rating] * 10
+
+            set_cached_dist(user_id, dist)
+
+        # 3) 퍼센타일 -> 매칭률
+        p = percentile_rank(target_rating, dist)  # 0~1
+        match_percentage = match_from_percentile(p, floor=25, ceil=99, gamma=1.45)
+
+        # 4) 레벨
+        if match_percentage >= 90:
+            match_level = "VERY_HIGH"
+        elif match_percentage >= 80:
+            match_level = "HIGH"
+        elif match_percentage >= 65:
+            match_level = "MEDIUM"
+        else:
+            match_level = "LOW"
+
+        logger.info(f"✅ match={match_percentage}% (rating={target_rating:.3f}, percentile={p:.3f}, dist_n={len(dist)})")
+
+        return {
+            "success": True,
+            "userId": user_id,
+            "meetingId": meeting_id,
+            "matchPercentage": match_percentage,
+            "matchLevel": match_level,
+            "predictedRating": round(float(target_rating), 2),
+            "percentile": round(float(p), 3),
+            "distCount": len(dist)
+        }
+
+    except Exception as e:
+        logger.error(f"❌ 매칭률 계산 실패: {e}", exc_info=True)
+        return {
+            "success": False,
+            "userId": user_id,
+            "meetingId": meeting_id,
+            "matchPercentage": 70,
+            "matchLevel": "MEDIUM"
+        }
+
+@router.post("/match-scores")
+async def get_match_scores(req: MatchScoresRequest):
+    user_id = req.user_id
+    meeting_ids = [int(x) for x in req.meeting_ids if x is not None]
+
+    if not meeting_ids:
+        return {"success": True, "userId": user_id, "items": []}
+
+    preds = await model_loader.svd.predict_for_user_meetings(user_id, meeting_ids)
+    values = [float(v) for v in preds.values()]
+    n = len(values)
+
+    # 카드가 1개면 rating 기반
+    if n < 2:
+        items = []
+        for mid, r in preds.items():
+            mp = rating_to_match_score_nonlinear(float(r), center=3.6, temp=0.22)
+            items.append({
+                "meetingId": mid,
+                "predictedRating": round(float(r), 3),
+                "matchPercentage": int(mp),
+                "matchLevel": "MEDIUM"
+            })
+        return {"success": True, "userId": user_id, "items": items}
+
+    sorted_vals = sorted(values)
+
+    def percentile_midrank(x: float) -> float:
+        # 동점(mid-rank) 퍼센타일: (lt + 0.5*eq) / n
+        lt = 0
+        eq = 0
+        for v in sorted_vals:
+            if v < x:
+                lt += 1
+            elif v == x:
+                eq += 1
+        p = (lt + 0.5 * eq) / n
+
+        # 딱 0/1 나오는 걸 싫으면 살짝 클립만
+        eps = 0.5 / n
+        if p < eps: p = eps
+        if p > 1 - eps: p = 1 - eps
+        return p
+
+    items = []
+    for mid, r in preds.items():
+        r = float(r)
+        p = percentile_midrank(r)
+        p = max(0.0, min(1.0, 0.5 + (p - 0.5) * 2.2))  # stretch
+        match_pct = match_from_percentile(p, floor=5, ceil=99, gamma=3.0)
+
+        if match_pct >= 90:
+            lvl = "VERY_HIGH"
+        elif match_pct >= 80:
+            lvl = "HIGH"
+        elif match_pct >= 65:
+            lvl = "MEDIUM"
+        else:
+            lvl = "LOW"
+
+        items.append({
+            "meetingId": mid,
+            "predictedRating": round(r, 3),
+            "percentile": round(p, 3),
+            "matchPercentage": int(match_pct),
+            "matchLevel": lvl,
+        })
+
+    return {"success": True, "userId": user_id, "items": items}
+

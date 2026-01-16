@@ -125,6 +125,18 @@ public class AIServiceClient {
         }
     }
 
+    public <T> T get(String path, Map<String, ?> params, Class<T> responseType) {
+        String url = config.getUrl() + path;
+
+        UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(url);
+        params.forEach(builder::queryParam);
+
+        String finalUrl = builder.build(true).toUriString();
+        log.info("🤖 FastAPI GET 요청: {}", finalUrl);
+
+        return restTemplate.getForObject(finalUrl, responseType);
+    }
+
     // ========================================================================
     // Step 2: SVD 모임 추천
     // ========================================================================
@@ -186,7 +198,7 @@ public class AIServiceClient {
      * @return 예측 만족도 (1~5)
      */
     public SatisfactionPredictionResponse predictSatisfaction(SatisfactionPredictionRequest request) {
-        return post("/api/ai/satisfaction-prediction", request, SatisfactionPredictionResponse.class);
+        return post("/api/ai/recommendations/satisfaction", request, SatisfactionPredictionResponse.class);
     }
 
     // ========================================================================
@@ -234,6 +246,7 @@ public class AIServiceClient {
     public Map<String, Object> getModelsInfo() {
         return get("/api/ai/models/info", Map.class);
     }
+
 
 
 }

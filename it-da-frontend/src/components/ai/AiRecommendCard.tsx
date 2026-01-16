@@ -1,100 +1,85 @@
-import { useNavigate } from 'react-router-dom';
-import './AIRecommendCard.css';
+// components/ai/AiRecommendCard.tsx
+import { useNavigate } from "react-router-dom";
+import type { AiMeeting } from "@/types/ai.types";
+import "./AiRecommendCard.css";
 
-interface Meeting {
-  meetingId: number;
-  title: string;
-  description: string;
-  category: string;
-  subcategory: string;
-  locationName: string;
-  meetingTime: string;
-  maxParticipants: number;
-  currentParticipants: number;
-  expectedCost: number;
-  vibe: string;
-  imageUrl?: string;
-  avgRating?: number;
-}
+type AIRecommendCardProps = {
+  meeting: AiMeeting; // 너 프로젝트 타입(AiMeeting/Meeting) 있으면 그걸로 교체
+  onRefresh?: () => Promise<void> | void;
+  isRefreshing?: boolean;
+  matchPercentage?: number;
+  loading?: boolean;
+};
 
-interface AIRecommendCardProps {
-  meeting: Meeting;
-}
-
-const AIRecommendCard = ({ meeting }: AIRecommendCardProps) => {
+const AIRecommendCard = ({
+  meeting,
+  matchPercentage = 0,
+  loading = false,
+  onRefresh,
+  isRefreshing = false,
+}: AIRecommendCardProps) => {
   const navigate = useNavigate();
+  const meetingId = meeting?.meetingId;
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return `${date.getMonth() + 1}/${date.getDate()} (${
-      ['일', '월', '화', '수', '목', '금', '토'][date.getDay()]
-    }) ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
+  const handleCardClick = () => {
+    if (!meetingId) return;
+    navigate(`/meetings/${meetingId}`);
   };
 
-  const getTags = () => {
-    return [
-      `#${meeting.category}`,
-      `#${meeting.subcategory}`,
-      `#${meeting.vibe}`,
-      `#${meeting.maxParticipants}명`
-    ];
+  const handleRefreshClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    onRefresh?.();
   };
+
+  if (!meeting) return null;
 
   return (
-    <div className="recommended-section">
-      <div className="section-header">
-        <h2 className="section-title">AI 맞춤 추천</h2>
-      </div>
-      
-      <div className="recommend-card">
+    <div className="ai-recommend-section">
+      <div className="ai-header">
         <div className="ai-badge">
-          🤖 AI 매칭률 {Math.floor(Math.random() * 15 + 85)}%
+          🤖 AI 매칭률 {loading ? "계산중..." : `${matchPercentage}%`}
         </div>
-        
-        <div className="recommend-content">
-          <div 
-            className="recommend-image"
-            style={{
-              backgroundImage: `url(${
-                meeting.imageUrl || 
-                'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400'
-              })`
-            }}
-          />
-          
-          <div className="recommend-info">
-            <h3 className="recommend-title">{meeting.title}</h3>
-            
-            <p className="recommend-desc">
-              {meeting.description}
-            </p>
-            
-            <div className="recommend-tags">
-              {getTags().map((tag, index) => (
-                <span key={index} className="tag">{tag}</span>
-              ))}
-            </div>
-            
-            <div className="recommend-meta">
-              📍 {meeting.locationName} | 
-              ⏰ {formatDate(meeting.meetingTime)} | 
+
+        {onRefresh && (
+          <button
+            className="refresh-btn"
+            onClick={handleRefreshClick}
+            disabled={Boolean(isRefreshing) || Boolean(loading)}
+          >
+            {isRefreshing || loading ? "🔄" : "↻"} 다시 추천받기
+          </button>
+        )}
+      </div>
+
+      <div className="recommend-card" onClick={handleCardClick}>
+        <div className="card-image">
+          {meeting.imageUrl ? (
+            <img src={meeting.imageUrl} alt={meeting.title} />
+          ) : (
+            <div className="image-placeholder">🎯</div>
+          )}
+        </div>
+
+        <div className="card-info">
+          <h3 className="card-title">{meeting.title}</h3>
+          <p className="card-desc">{meeting.description}</p>
+
+          <div className="card-tags">
+            {meeting.category && <span>#{meeting.category}</span>}
+            {meeting.subcategory && <span>#{meeting.subcategory}</span>}
+            {meeting.vibe && <span>#{meeting.vibe}</span>}
+          </div>
+
+          <div className="card-meta">
+            <span>📍 {meeting.locationName}</span>
+            <span>
               👥 {meeting.currentParticipants}/{meeting.maxParticipants}명
-            </div>
-            
-            <div className="recommend-actions">
-              <button 
-                className="btn-join"
-                onClick={() => navigate(`/chat/${meeting.meetingId}`)}
-              >
-                💬 톡방 입장하기
-              </button>
-              <button 
-                className="btn-detail"
-                onClick={() => navigate(`/meetings/${meeting.meetingId}`)}
-              >
-                상세보기
-              </button>
-            </div>
+            </span>
+          </div>
+
+          <div className="card-actions">
+            <button className="btn-primary">🌙 톡방 입장하기</button>
+            <button className="btn-secondary">상세보기</button>
           </div>
         </div>
       </div>
