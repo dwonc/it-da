@@ -10,16 +10,19 @@ import com.project.itda.domain.social.repository.ChatRoomRepository;
 import com.project.itda.domain.user.entity.User;
 import com.project.itda.domain.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
 @Transactional(readOnly = true)
 @RequiredArgsConstructor
+@Slf4j
 public class ChatRoomService {
     private final ChatRoomRepository chatRoomRepository;
     private final ChatParticipantRepository chatParticipantRepository;
@@ -102,5 +105,35 @@ public class ChatRoomService {
                         .role(participant.getRole().name())
                         .build())
                 .toList();
+    }
+
+    @Transactional
+    public void updateLastReadAt(Long roomId, String email) {
+        // 1. 참여자 조회
+        Optional<ChatParticipant> participantOpt = chatParticipantRepository.findByChatRoomIdAndUserEmail(roomId, email);
+
+        if (participantOpt.isPresent()) {
+            participantOpt.get().updateLastReadAt(LocalDateTime.now());
+        } else {
+            // 2. 없는 경우 새로 등록 (saveAndFlush로 즉시 반영하여 count에 잡히게 함)
+            User user = userRepository.findByEmail(email).orElseThrow();
+            ChatRoom room = chatRoomRepository.findById(roomId).orElseThrow();
+            ChatParticipant newParticipant = ChatParticipant.builder()
+                    .chatRoom(room).user(user).role(ChatRole.MEMBER)
+                    .lastReadAt(LocalDateTime.now()).joinedAt(LocalDateTime.now()).build();
+
+            chatParticipantRepository.saveAndFlush(newParticipant);
+        }
+    }
+    @Transactional
+    public void leaveChatRoom(Long roomId, String email) {
+        // ✅ 멤버 삭제(delete) 로직을 제거하여 방을 닫아도 멤버로 남게 함
+        // participantOpt.ifPresent(chatParticipantRepository::delete); (이 줄을 삭제하거나 주석 처리)
+
+        Optional<ChatParticipant> participantOpt = chatParticipantRepository.findByChatRoomIdAndUserEmail(roomId, email);
+        participantOpt.ifPresent(p -> {
+            p.updateLastReadAt(LocalDateTime.now()); // 마지막 읽은 시간만 기록
+        });
+        log.info("채팅방 세션 종료 (멤버 유지): {}, 방: {}", email, roomId);
     }
 }

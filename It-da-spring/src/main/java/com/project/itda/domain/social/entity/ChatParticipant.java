@@ -42,4 +42,9 @@ public class ChatParticipant {
     @CreationTimestamp // [cite: 295]
     @Column(name = "joined_at", updatable = false) // [cite: 296]
     private LocalDateTime joinedAt;
+
+    // ✅ 메서드 추가: 마지막 읽은 시간을 업데이트하는 기능
+    public void updateLastReadAt(LocalDateTime lastReadAt) {
+        this.lastReadAt = lastReadAt;
+    }
 }

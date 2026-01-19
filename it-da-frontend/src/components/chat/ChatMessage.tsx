@@ -9,7 +9,7 @@ interface Props {
     isMine: boolean;
 }
 
-const ChatMessageItem: React.FC<Props> = ({ message, isMine }) => {
+const ChatMessage: React.FC<Props> = ({ message, isMine }) => {
     // ✅ 백엔드 DTO 필드명(sentAt)을 사용하여 시간 표시
     const displayTime = message.sentAt
         ? new Date(message.sentAt).toLocaleTimeString("ko-KR", {
@@ -59,18 +59,49 @@ const ChatMessageItem: React.FC<Props> = ({ message, isMine }) => {
 
             <div className="message-bubble-wrapper">
                 {/* ✅ 상대방 메시지일 때만 이름을 보여줍니다. */}
-                {!isMine && <div className="sender-name">{message.senderNickname}</div>}
+                {!isMine && (
+                    <div className="sender-name" style={{ fontWeight: 'bold', marginBottom: '2px' }}>
+                        {message.senderNickname}
+                    </div>
+                )}
 
-                <div className={`chat-bubble ${isMine ? "mine-bubble" : "others-bubble"}`}>
-                    {renderSpecialContent()}
-                </div>
-
-                <div className="chat-timestamp">
-                    {displayTime}
+                <div className="bubble-info-container" style={{display:'flex',alignItems:'flex-end',gap:'5px'}}>
+                    {/* ✅ 내 메시지(isMine)일 때만 왼쪽에 안 읽은 숫자 표시 */}
+                    {isMine && (
+                        <span style={{
+                            color: '#FFD700',
+                            fontSize: '11px',
+                            fontWeight: 'bold',
+                            marginRight: '4px',
+                            minWidth: '15px',
+                            textAlign: 'right'
+                        }}>
+            {/* ✅ 디버깅: 항상 표시해보기 */}
+                            {message.unreadCount}
+                        </span>
+                    )}
+                    <div className={`chat-bubble ${isMine ? "mine-bubble" : "others-bubble"}`}>
+                        {renderSpecialContent()}
+                    </div>
+                    {/* ✅ 상대방 메시지일 때 오른쪽에 안 읽은 숫자 표시 (필요 시) */}
+                    {!isMine && (
+                        <span style={{
+                            color: '#FFD700',
+                            fontSize: '11px',
+                            fontWeight: 'bold',
+                            marginLeft: '4px',
+                            minWidth: '15px'
+                        }}>
+            {message.unreadCount !== undefined ? message.unreadCount : '-'}
+                        </span>
+                    )}
+                    <div className="chat-timestamp">
+                        {displayTime}
+                    </div>
                 </div>
             </div>
         </div>
     );
 };
 
-export default ChatMessageItem;
+export default ChatMessage;

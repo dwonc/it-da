@@ -5,6 +5,7 @@ import com.project.itda.domain.social.entity.ChatMessage;
 import com.project.itda.domain.social.entity.ChatRoom;
 import com.project.itda.domain.social.enums.MessageType;
 import com.project.itda.domain.social.repository.ChatMessageRepository;
+import com.project.itda.domain.social.repository.ChatParticipantRepository;
 import com.project.itda.domain.social.repository.ChatRoomRepository;
 import com.project.itda.domain.user.entity.User;
 import com.project.itda.domain.user.repository.UserRepository;
@@ -21,6 +22,7 @@ public class ChatMessageService {
     private final ChatMessageRepository chatMessageRepository;
     private final UserRepository userRepository; // 유저 조회를 위해 추가
     private final ChatRoomRepository chatRoomRepository; // 방 조회를 위해 추가
+    private final ChatParticipantRepository chatParticipantRepository;
 
     public List<ChatMessage> getMessagesByRoom(Long roomId) {
         return chatMessageRepository.findByChatRoomIdOrderByCreatedAtAsc(roomId);
@@ -46,34 +48,38 @@ public class ChatMessageService {
 
         chatMessageRepository.save(message);
     }
-    @Transactional(readOnly = true)
     public List<ChatMessageResponse> getChatMessages(Long roomId) {
-        // 1. 해당 방의 메시지 내역 조회
         List<ChatMessage> messages = chatMessageRepository.findByChatRoomIdOrderByCreatedAtAsc(roomId);
+        long totalParticipants = chatParticipantRepository.countByChatRoomId(roomId);
 
-        // 2. ChatMessageResponse DTO로 변환하여 순환 참조 끊기
-        return messages.stream()
-                .map(msg -> ChatMessageResponse.builder()
-                        .messageId(msg.getId())
-                        .senderId(msg.getSender().getUserId())
-                        .senderNickname(msg.getSender().getNickname() != null ?
-                                msg.getSender().getNickname() : msg.getSender().getUsername())
-                        .content(msg.getContent())
-                        .type(msg.getType())
-                        .sentAt(msg.getCreatedAt())
-                        .build())
-                .collect(Collectors.toList());
+        return messages.stream().map(msg -> {
+            // ✅ 보낸 사람의 닉네임이 없으면 username을 사용하도록 확정
+            String nickname = msg.getSender().getNickname();
+            String finalName = (nickname != null && !nickname.trim().isEmpty())
+                    ? nickname : msg.getSender().getUsername();
+
+            long readCount = chatParticipantRepository.countByChatRoomIdAndLastReadAtAfter(roomId, msg.getCreatedAt());
+            int unreadCount = (int) (totalParticipants - readCount - 1);
+
+            return ChatMessageResponse.builder()
+                    .messageId(msg.getId())
+                    .senderId(msg.getSender().getUserId())
+                    .senderNickname(finalName) // 💡 "익" 대신 실제 이름 주입
+                    .content(msg.getContent())
+                    .type(msg.getType())
+                    .sentAt(msg.getCreatedAt())
+                    .unreadCount(Math.max(0, unreadCount))
+                    .build();
+        }).collect(Collectors.toList());
     }
-    public List<ChatMessageResponse> getMessageHistory(Long roomId) {
-        return chatMessageRepository.findByChatRoomIdOrderByCreatedAtAsc(roomId).stream()
-                .map(msg -> ChatMessageResponse.builder()
-                        .messageId(msg.getId())
-                        .senderId(msg.getSender().getUserId())
-                        .senderNickname(msg.getSender().getNickname())
-                        .content(msg.getContent())
-                        .sentAt(msg.getCreatedAt())
-                        .type(msg.getType())
-                        .build())
-                .toList();
+    @Transactional
+    public void updateLastReadAt(Long roomId, String email) {
+        // 1. 참여자 정보 조회
+        com.project.itda.domain.social.entity.ChatParticipant participant =
+                chatParticipantRepository.findByChatRoomIdAndUserEmail(roomId, email)
+                        .orElseThrow(() -> new RuntimeException("참여자가 아닙니다."));
+
+        // 2. 마지막 읽은 시간 갱신 (이미 ChatParticipant 엔티티에 메서드 추가됨)
+        participant.updateLastReadAt(java.time.LocalDateTime.now());
     }
 }

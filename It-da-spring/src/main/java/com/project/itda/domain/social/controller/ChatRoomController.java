@@ -42,6 +42,10 @@ public class ChatRoomController {
     }
     @PostMapping("/rooms/{roomId}/read")
     public ResponseEntity<Void> markAsRead(@PathVariable Long roomId) {
+        SessionUser user = (SessionUser) httpSession.getAttribute("user");
+        if (user != null) {
+            chatRoomService.updateLastReadAt(roomId, user.getEmail());
+        }
         // 세션 유저 정보를 가져와서 해당 방의 마지막 읽은 시간 업데이트 로직
         return ResponseEntity.ok().build();
     }

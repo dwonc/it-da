@@ -16,4 +16,5 @@ public class ChatMessageResponse {
     private String content;     // 내용 [cite: 273]
     private MessageType type;   // 타입 [cite: 270]
     private LocalDateTime sentAt; // 전송 시간 [cite: 280]
+    private int unreadCount;
 }
