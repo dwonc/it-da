@@ -100,3 +100,48 @@
         text-align: center;
     }
 }
+
+/*
+ * NotificationDropdown.css 에 추가할 스타일
+ * 기존 CSS 파일 맨 아래에 붙여넣으세요
+ */
+
+/* ✅ 로딩 상태 */
+.notification-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    color: #6c757d;
+}
+
+.notification-loading .loading-spinner {
+    font-size: 1.5rem;
+    margin-bottom: 0.5rem;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* ✅ 추가 로딩 인디케이터 */
+.notification-loading-more {
+    display: flex;
+    justify-content: center;
+    padding: 1rem;
+    color: #6c757d;
+    font-size: 0.85rem;
+}
+
+/* ✅ 알림 끝 표시 */
+.notification-end {
+    display: flex;
+    justify-content: center;
+    padding: 1rem;
+    color: #adb5bd;
+    font-size: 0.8rem;
+    border-top: 1px solid #f1f3f5;
+}

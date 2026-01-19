@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+// src/components/notification/NotificationDropdown.tsx
+
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useNotificationStore, Notification } from '@/stores/useNotificationStore';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -17,16 +19,48 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ isOpen: pro
     const {
         notifications,
         isOpen: storeIsOpen,
+        isLoading,           // ✅ 로딩 상태 추가
+        hasMore,             // ✅ 더 불러올 알림 있는지
         closeDropdown: storeCloseDropdown,
+        fetchNotifications,  // ✅ 알림 목록 조회
+        fetchMoreNotifications, // ✅ 추가 로드
         markAsRead,
         markAllAsRead,
         removeNotification
     } = useNotificationStore();
 
     const [loadingId, setLoadingId] = useState<string | null>(null);
+    const listRef = useRef<HTMLDivElement>(null); // ✅ 무한 스크롤용 ref
 
     const isOpen = propIsOpen !== undefined ? propIsOpen : storeIsOpen;
     const onClose = propOnClose || storeCloseDropdown;
+
+    // ✅ 드롭다운 열릴 때 알림 목록 조회
+    useEffect(() => {
+        if (isOpen) {
+            fetchNotifications();
+        }
+    }, [isOpen, fetchNotifications]);
+
+    // ✅ 무한 스크롤 핸들러
+    const handleScroll = useCallback(() => {
+        if (!listRef.current || isLoading || !hasMore) return;
+
+        const { scrollTop, scrollHeight, clientHeight } = listRef.current;
+        // 스크롤이 하단 100px 이내에 도달하면 추가 로드
+        if (scrollHeight - scrollTop - clientHeight < 100) {
+            fetchMoreNotifications();
+        }
+    }, [isLoading, hasMore, fetchMoreNotifications]);
+
+    // ✅ 스크롤 이벤트 리스너 등록
+    useEffect(() => {
+        const listElement = listRef.current;
+        if (listElement) {
+            listElement.addEventListener('scroll', handleScroll);
+            return () => listElement.removeEventListener('scroll', handleScroll);
+        }
+    }, [handleScroll]);
 
     if (!isOpen) return null;
 
@@ -131,67 +165,89 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ isOpen: pro
                     )}
                 </div>
 
-                <div className="notification-list">
-                    {notifications.length === 0 ? (
+                <div className="notification-list" ref={listRef}>
+                    {/* ✅ 초기 로딩 상태 */}
+                    {isLoading && notifications.length === 0 ? (
+                        <div className="notification-loading">
+                            <span className="loading-spinner">⏳</span>
+                            <p>알림을 불러오는 중...</p>
+                        </div>
+                    ) : notifications.length === 0 ? (
                         <div className="notification-empty">
                             <span className="empty-icon">🔔</span>
                             <p>알림이 없습니다</p>
                         </div>
                     ) : (
-                        notifications.map((notification) => {
-                            const profile = getProfileInfo(notification);
-                            return (
-                                <div
-                                    key={notification.id}
-                                    className={`notification-item ${notification.type} ${notification.isUnread ? 'unread' : ''}`}
-                                    onClick={() => handleNotificationClick(notification)}
-                                >
-                                    <div className="notification-avatar">
-                                        {getProfileImageUrl(profile.image) ? (
-                                            <img src={getProfileImageUrl(profile.image)!} alt={profile.name} />
-                                        ) : (
-                                            <div className="avatar-placeholder">{profile.name.charAt(0).toUpperCase()}</div>
-                                        )}
-                                        <span className="notification-type-icon">{getNotificationIcon(notification)}</span>
+                        <>
+                            {notifications.map((notification) => {
+                                const profile = getProfileInfo(notification);
+                                return (
+                                    <div
+                                        key={notification.id}
+                                        className={`notification-item ${notification.type} ${notification.isUnread ? 'unread' : ''}`}
+                                        onClick={() => handleNotificationClick(notification)}
+                                    >
+                                        <div className="notification-avatar">
+                                            {getProfileImageUrl(profile.image) ? (
+                                                <img src={getProfileImageUrl(profile.image)!} alt={profile.name} />
+                                            ) : (
+                                                <div className="avatar-placeholder">{profile.name.charAt(0).toUpperCase()}</div>
+                                            )}
+                                            <span className="notification-type-icon">{getNotificationIcon(notification)}</span>
+                                        </div>
+
+                                        <div className="notification-content">
+                                            <div className="notification-title">{notification.title}</div>
+                                            <div className="notification-text">{notification.text}</div>
+
+                                            {/* ✅ 팔로우 요청일 때만 수락/거절 버튼 표시 */}
+                                            {notification.type === 'follow_request' && (
+                                                <div className="notif-actions">
+                                                    <button
+                                                        className="notif-accept-btn"
+                                                        onClick={(e) => handleAcceptFollow(e, notification)}
+                                                        disabled={loadingId === notification.id}
+                                                    >
+                                                        {loadingId === notification.id ? '...' : '수락'}
+                                                    </button>
+                                                    <button
+                                                        className="notif-reject-btn"
+                                                        onClick={(e) => handleRejectFollow(e, notification)}
+                                                        disabled={loadingId === notification.id}
+                                                    >
+                                                        {loadingId === notification.id ? '...' : '거절'}
+                                                    </button>
+                                                </div>
+                                            )}
+
+                                            <div className="notification-time">{notification.time}</div>
+                                        </div>
+
+                                        <button
+                                            className="notification-delete-btn"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                removeNotification(notification.id);
+                                            }}
+                                        >✕</button>
                                     </div>
+                                );
+                            })}
 
-                                    <div className="notification-content">
-                                        <div className="notification-title">{notification.title}</div>
-                                        <div className="notification-text">{notification.text}</div>
-
-                                        {/* ✅ 팔로우 요청일 때만 수락/거절 버튼 표시 */}
-                                        {notification.type === 'follow_request' && (
-                                            <div className="notif-actions">
-                                                <button
-                                                    className="notif-accept-btn"
-                                                    onClick={(e) => handleAcceptFollow(e, notification)}
-                                                    disabled={loadingId === notification.id}
-                                                >
-                                                    {loadingId === notification.id ? '...' : '수락'}
-                                                </button>
-                                                <button
-                                                    className="notif-reject-btn"
-                                                    onClick={(e) => handleRejectFollow(e, notification)}
-                                                    disabled={loadingId === notification.id}
-                                                >
-                                                    {loadingId === notification.id ? '...' : '거절'}
-                                                </button>
-                                            </div>
-                                        )}
-
-                                        <div className="notification-time">{notification.time}</div>
-                                    </div>
-
-                                    <button
-                                        className="notification-delete-btn"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            removeNotification(notification.id);
-                                        }}
-                                    >✕</button>
+                            {/* ✅ 추가 로딩 인디케이터 */}
+                            {isLoading && notifications.length > 0 && (
+                                <div className="notification-loading-more">
+                                    <span>더 불러오는 중...</span>
                                 </div>
-                            );
-                        })
+                            )}
+
+                            {/* ✅ 더 이상 알림 없음 표시 */}
+                            {!hasMore && notifications.length > 0 && (
+                                <div className="notification-end">
+                                    <span>모든 알림을 확인했습니다</span>
+                                </div>
+                            )}
+                        </>
                     )}
                 </div>
             </div>
