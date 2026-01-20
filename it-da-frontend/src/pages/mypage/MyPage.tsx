@@ -61,6 +61,9 @@ const MyPage: React.FC = () => {
   const [followingCount, setFollowingCount] = useState(0);
   const [followerCount, setFollowerCount] = useState(0);
 
+  // ✅ 참여 모임 카운트 상태 추가
+  const [participationCount, setParticipationCount] = useState(0);
+
   const [notifyFollowMeeting, setNotifyFollowMeeting] = useState(true);
   const [notifyFollowReview, setNotifyFollowReview] = useState(true);
   const [isPublic, setIsPublic] = useState(true);
@@ -100,7 +103,10 @@ const MyPage: React.FC = () => {
   ];
 
   const stats = useMemo(() => {
-    const totalMeetings = completedMeetings.length + upcomingMeetings.length;
+    const totalMeetings =
+      participationCount > 0
+        ? participationCount
+        : completedMeetings.length + upcomingMeetings.length;
     const avgRating =
       myReviews.length > 0
         ? (
@@ -112,51 +118,14 @@ const MyPage: React.FC = () => {
       { icon: "📅", value: totalMeetings, label: "총 참여 모임" },
       { icon: "⭐", value: avgRating, label: "평균 평점" },
     ];
-  }, [completedMeetings.length, upcomingMeetings.length, myReviews]);
+  }, [
+    completedMeetings.length,
+    upcomingMeetings.length,
+    myReviews,
+    participationCount,
+  ]);
 
-
-
-// ✅ 수정 (이 부분만 추가!)
-    const handleProfileUpdate = useCallback(
-        (update: ProfileUpdate) => {
-            console.log("📊 마이페이지 프로필 업데이트 수신:", update);
-
-            if (update.type === "PROFILE_UPDATE") {
-                setFollowerCount(update.newFollowerCount);
-            }
-
-            if (update.type === "PROFILE_FOLLOWING_UPDATE") {
-                setFollowingCount(update.newFollowerCount);
-            }
-
-            // ✅ 추가: 내 프로필 정보 업데이트
-            if (update.type === "PROFILE_INFO_UPDATE" && update.userId === currentUserId) {
-                const currentUser = useAuthStore.getState().user;
-                if (currentUser) {
-                    useAuthStore.getState().setUser({
-                        ...currentUser,
-                        username: update.username ?? currentUser.username,
-                        profileImageUrl: update.profileImageUrl ?? currentUser.profileImageUrl,
-                        bio: update.bio ?? currentUser.bio,
-                        mbti: update.mbti ?? currentUser.mbti,
-                        address: update.address ?? currentUser.address,
-                    });
-                }
-                // isPublic 업데이트
-                if (update.isPublic !== undefined) {
-                    setIsPublic(update.isPublic);
-                }
-            }
-        },
-        [followerCount, followingCount, currentUserId]
-    );
-
-  // ✅ 프로필 웹소켓 연결 (내 프로필 구독)
-  useProfileWebSocket({
-    profileUserId: currentUserId,
-    onProfileUpdate: handleProfileUpdate,
-  });
-
+  // ✅ fetchAll을 먼저 선언!
   const fetchAll = useCallback(async () => {
     if (!currentUserId) return;
 
@@ -173,6 +142,9 @@ const MyPage: React.FC = () => {
       setMyReviews(reviews);
       setUpcomingMeetings(upcoming);
       setCompletedMeetings(completed);
+
+      // ✅ 초기 참여 모임 카운트 설정
+      setParticipationCount(upcoming.length + completed.length);
     } catch (e) {
       console.error(e);
       setError("마이페이지 정보를 불러오지 못했습니다.");
@@ -180,6 +152,68 @@ const MyPage: React.FC = () => {
       setLoading(false);
     }
   }, [currentUserId]);
+
+  // ✅ 프로필 업데이트 핸들러 (WebSocket)
+  const handleProfileUpdate = useCallback(
+    (update: ProfileUpdate) => {
+      console.log("📊 마이페이지 프로필 업데이트 수신:", update);
+
+      // 팔로워 카운트 업데이트
+      if (update.type === "PROFILE_UPDATE") {
+        if (update.newFollowerCount !== undefined) {
+          setFollowerCount(update.newFollowerCount);
+        }
+        // ✅ 참여 모임 카운트 업데이트
+        if (
+          update.field === "participationCount" &&
+          update.value !== undefined
+        ) {
+          console.log("✅ 참여 모임 카운트 업데이트:", update.value);
+          setParticipationCount(update.value as number);
+        }
+      }
+
+      // 팔로잉 카운트 업데이트
+      if (update.type === "PROFILE_FOLLOWING_UPDATE") {
+        setFollowingCount(update.newFollowerCount);
+      }
+
+      // ✅ 모임 완료 시 자동 새로고침!
+      if (update.type === "MEETING_COMPLETED") {
+        console.log("🏁 모임 완료 알림 수신! 목록 새로고침...");
+        fetchAll(); // 예정/완료 모임 목록 새로고침
+      }
+
+      // 내 프로필 정보 업데이트
+      if (
+        update.type === "PROFILE_INFO_UPDATE" &&
+        update.userId === currentUserId
+      ) {
+        const currentUser = useAuthStore.getState().user;
+        if (currentUser) {
+          useAuthStore.getState().setUser({
+            ...currentUser,
+            username: update.username ?? currentUser.username,
+            profileImageUrl:
+              update.profileImageUrl ?? currentUser.profileImageUrl,
+            bio: update.bio ?? currentUser.bio,
+            mbti: update.mbti ?? currentUser.mbti,
+            address: update.address ?? currentUser.address,
+          });
+        }
+        if (update.isPublic !== undefined) {
+          setIsPublic(update.isPublic);
+        }
+      }
+    },
+    [currentUserId, fetchAll],
+  );
+
+  // ✅ 프로필 웹소켓 연결 (내 프로필 구독)
+  useProfileWebSocket({
+    profileUserId: currentUserId,
+    onProfileUpdate: handleProfileUpdate,
+  });
 
   const fetchFollowCounts = useCallback(async () => {
     if (!currentUserId) return;
@@ -284,19 +318,16 @@ const MyPage: React.FC = () => {
 
       setFollowUsers((prev) =>
         prev.map((u) =>
-          u.userId === targetUserId ? { ...u, isFollowing: !u.isFollowing } : u
-        )
+          u.userId === targetUserId ? { ...u, isFollowing: !u.isFollowing } : u,
+        ),
       );
-
-      // 내 팔로잉 수 다시 가져오기 (직접 업데이트 하는게 더 빠름)
-      // await fetchFollowCounts();
     } catch (e: any) {
       console.error("팔로우 처리 에러:", e);
       if (e.message?.includes("이미 팔로우")) {
         setFollowUsers((prev) =>
           prev.map((u) =>
-            u.userId === targetUserId ? { ...u, isFollowing: true } : u
-          )
+            u.userId === targetUserId ? { ...u, isFollowing: true } : u,
+          ),
         );
       } else {
         alert(e.message || "팔로우 처리에 실패했습니다.");
@@ -317,7 +348,7 @@ const MyPage: React.FC = () => {
           .map((u) => u)
           .find((u) => u.userId === userId)
           ?.email.split("@")[0]
-      }`
+      }`,
     );
   };
 
@@ -397,12 +428,20 @@ const MyPage: React.FC = () => {
     window.location.reload();
   };
 
+  // ✅ 프로필 정보 (참여 모임 카운트 사용)
   const profile = useMemo(() => {
     const average =
       myReviews.length > 0
         ? myReviews.reduce((sum, r) => sum + (r.rating || 0), 0) /
           myReviews.length
         : 0;
+
+    // 참여 모임 카운트: WebSocket 업데이트 또는 API 데이터
+    const meetingCount =
+      participationCount > 0
+        ? participationCount
+        : upcomingMeetings.length + completedMeetings.length;
+
     return {
       username: user?.username || "사용자",
       email: user?.email || "",
@@ -415,7 +454,7 @@ const MyPage: React.FC = () => {
       stats: {
         followingCount,
         followerCount,
-        meetingCount: upcomingMeetings.length + completedMeetings.length,
+        meetingCount,
         badgeCount: 8,
         averageRating: average || 0,
       },
@@ -427,6 +466,7 @@ const MyPage: React.FC = () => {
     completedMeetings.length,
     followingCount,
     followerCount,
+    participationCount,
   ]);
 
   if (!currentUserId) {
@@ -441,69 +481,73 @@ const MyPage: React.FC = () => {
   }
 
   return (
-      <div className="mypage-root">
-          <header className="mypage-header">
-              <div className="mypage-header-wrapper">
-                  <div className="mypage-header-content">
-                      {/* ✅ 왼쪽: 뒤로가기 + 마이페이지 */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                          <button
-                              className="mypage-back-btn"
-                              type="button"
-                              onClick={() => navigate('/')}  // ✅ 메인페이지로!
-                          >
-                              ←
-                          </button>
-                          <h1 className="mypage-header-title">마이페이지</h1>
-                      </div>
+    <div className="mypage-root">
+      <header className="mypage-header">
+        <div className="mypage-header-wrapper">
+          <div className="mypage-header-content">
+            {/* 왼쪽: 뒤로가기 + 마이페이지 */}
+            <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+              <button
+                className="mypage-back-btn"
+                type="button"
+                onClick={() => navigate("/")}
+              >
+                ←
+              </button>
+              <h1 className="mypage-header-title">마이페이지</h1>
+            </div>
 
-                      {/* ✅ 중앙: IT-DA 로고 */}
-                      <div style={{
-                          position: 'absolute',
-                          left: '50%',
-                          transform: 'translateX(-50%)'
-                      }}>
-                          <h1
-                              onClick={() => navigate("/")}
-                              style={{
-                                  fontSize: '1.3rem',
-                                  fontWeight: '800',
-                                  margin: 0,
-                                  cursor: 'pointer',
-                                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                                  WebkitBackgroundClip: 'text',
-                                  WebkitTextFillColor: 'transparent',
-                                  backgroundClip: 'text',
-                                  letterSpacing: '1px'
-                              }}
-                          >
-                              IT-DA
-                          </h1>
-                      </div>
+            {/* 중앙: IT-DA 로고 */}
+            <div
+              style={{
+                position: "absolute",
+                left: "50%",
+                transform: "translateX(-50%)",
+              }}
+            >
+              <h1
+                onClick={() => navigate("/meetings")}
+                style={{
+                  fontSize: "1.3rem",
+                  fontWeight: "800",
+                  margin: 0,
+                  cursor: "pointer",
+                  background:
+                    "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                  backgroundClip: "text",
+                  letterSpacing: "1px",
+                }}
+              >
+                IT-DA
+              </h1>
+            </div>
 
-                      {/* ✅ 오른쪽: 알림 + 설정 */}
-                      <div className="mypage-header-actions">
-                          <button
-                              className="mypage-icon-btn"
-                              type="button"
-                              onClick={() => setIsNotificationOpen(!isNotificationOpen)}
-                          >
-                              🔔
-                              {unreadCount > 0 && (
-                                  <span className="mypage-badge">{unreadCount}</span>
-                              )}
-                          </button>
-                          <button
-                              className="mypage-icon-btn"
-                              type="button"
-                              onClick={() => setActiveTab("settings")}
-                          >
-                              ⚙️
-                          </button>
-                      </div>
-                  </div>
-              </div>
-          </header>
+            {/* 오른쪽: 알림 + 설정 */}
+            <div className="mypage-header-actions">
+              <button
+                className="mypage-icon-btn"
+                type="button"
+                onClick={() => setIsNotificationOpen(!isNotificationOpen)}
+              >
+                🔔
+                {unreadCount > 0 && (
+                  <span className="mypage-badge">{unreadCount}</span>
+                )}
+              </button>
+              <button
+                className="mypage-icon-btn"
+                type="button"
+                onClick={() => setActiveTab("settings")}
+              >
+                ⚙️
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
       <ProfileSection
         username={profile.username}
         email={profile.email}

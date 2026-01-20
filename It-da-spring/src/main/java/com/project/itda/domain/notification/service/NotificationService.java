@@ -254,6 +254,27 @@ public class NotificationService {
     // ========================================
 
     /**
+     * 모임 참가 승인 알림 (참여자에게)
+     */
+    @Transactional
+    public void notifyParticipationApproved(User participant, Long meetingId, String meetingTitle, long participationCount) {
+        createNotification(
+                participant,
+                NotificationType.MEETING_JOIN,
+                "'" + meetingTitle + "' 모임 참가가 승인되었습니다!",
+                "🎉 이제 모임에 참여할 수 있습니다.",
+                "/meetings/" + meetingId,
+                meetingId,
+                null,
+                null,
+                null
+        );
+
+        // ✅ WebSocket으로 참여 모임 카운트 업데이트 전송
+        pushNotificationService.pushProfileUpdate(participant.getUserId(), "participationCount", participationCount);
+    }
+
+    /**
      * 내 모임에 누군가 참가 알림 (모임장에게)
      */
     @Transactional
@@ -324,6 +345,30 @@ public class NotificationService {
     // ========================================
     // 후기 관련 알림
     // ========================================
+
+    /**
+     * ✅ 모임 완료 알림 (후기 작성 요청) - 실시간!
+     */
+    @Transactional
+    public void notifyMeetingCompleted(User participant, Long meetingId, String meetingTitle) {
+        log.info("🏁 모임 완료 알림 전송: userId={}, meetingId={}", participant.getUserId(), meetingId);
+
+        // DB에 알림 저장
+        createNotification(
+                participant,
+                NotificationType.REVIEW_REQUEST,
+                "'" + meetingTitle + "' 모임이 완료되었습니다!",
+                "✍️ 후기를 작성해주세요.",
+                "/my-meetings",
+                meetingId,
+                null,
+                null,
+                null
+        );
+
+        // ✅ WebSocket으로 실시간 푸시 (마이페이지 새로고침용)
+        pushNotificationService.pushMeetingCompleted(participant.getUserId(), meetingId, meetingTitle);
+    }
 
     /**
      * 후기 작성 요청 알림

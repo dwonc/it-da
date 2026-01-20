@@ -33,7 +33,7 @@ const MeetingManageModal = ({
 
   useEffect(() => {
     if (isOpen) {
-      fetchParticipants();
+      void fetchParticipants();
     }
   }, [isOpen, meetingId]);
 
@@ -42,7 +42,7 @@ const MeetingManageModal = ({
     try {
       const response = await axios.get(
         `http://localhost:8080/api/participations/meeting/${meetingId}`,
-        { withCredentials: true }
+        { withCredentials: true },
       );
       setParticipants(response.data.participants || []);
     } catch (err) {
@@ -57,11 +57,11 @@ const MeetingManageModal = ({
       await axios.post(
         `http://localhost:8080/api/participations/${participationId}/approve`,
         {},
-        { withCredentials: true }
+        { withCredentials: true },
       );
       alert("✅ 참여를 승인했습니다.");
-      fetchParticipants();
-      onUpdate(); // 상세 페이지도 업데이트
+      void fetchParticipants();
+      onUpdate();
     } catch (err) {
       console.error("승인 실패:", err);
       alert("승인에 실패했습니다.");
@@ -70,16 +70,16 @@ const MeetingManageModal = ({
 
   const handleReject = async (participationId: number) => {
     const reason = prompt("거절 사유를 입력해주세요 (선택):");
-    if (reason === null) return; // 취소 버튼 눌렀을 때
+    if (reason === null) return;
 
     try {
       await axios.post(
         `http://localhost:8080/api/participations/${participationId}/reject`,
         { reason: reason || "주최자가 거절하였습니다." },
-        { withCredentials: true }
+        { withCredentials: true },
       );
       alert("❌ 참여를 거절했습니다.");
-      fetchParticipants();
+      void fetchParticipants();
       onUpdate();
     } catch (err) {
       console.error("거절 실패:", err);
@@ -87,33 +87,43 @@ const MeetingManageModal = ({
     }
   };
 
-    const handleDeleteMeeting = async () => {
-        if (!window.confirm("정말 이 모임을 삭제하시겠습니까?\n삭제된 모임은 복구할 수 없습니다.")) {
-            return;
-        }
+  // ✅ 모임 마감 함수 추가
+  const handleCompleteMeeting = async () => {
+    const approvedCount = participants.filter(
+      (p) => p.status === "APPROVED",
+    ).length;
 
-        try {
-            await axios.delete(
-                `http://localhost:8080/api/meetings/${meetingId}`,
-                { withCredentials: true }
-            );
+    if (approvedCount === 0) {
+      alert("승인된 참여자가 없어 모임을 마감할 수 없습니다.");
+      return;
+    }
 
-            alert("✅ 모임이 삭제되었습니다.");
-            onClose(); // 모달 닫기
-            navigate("/meetings"); // 모임 목록으로 이동
-        } catch (error: any) {
-            console.error("❌ 모임 삭제 실패:", error);
+    if (
+      !confirm(
+        `모임을 마감하시겠습니까?\n\n승인된 참여자 ${approvedCount}명이 "완료" 상태로 변경되고,\n참여자들이 후기를 작성할 수 있게 됩니다.`,
+      )
+    ) {
+      return;
+    }
 
-            if (error.response?.status === 403) {
-                alert("모임 주최자만 삭제할 수 있습니다.");
-            } else if (error.response?.data?.message) {
-                alert(error.response.data.message);
-            } else {
-                alert("모임 삭제에 실패했습니다.");
-            }
-        }
-    };
+    try {
+      const response = await axios.post(
+        `http://localhost:8080/api/meetings/${meetingId}/complete`,
+        {},
+        { withCredentials: true },
+      );
 
+      alert(
+        `🏁 모임이 마감되었습니다!\n${response.data.completedParticipants}명의 참여가 완료 처리되었습니다.`,
+      );
+      void fetchParticipants();
+      onUpdate();
+      onClose();
+    } catch (err: any) {
+      console.error("모임 마감 실패:", err);
+      alert(err.response?.data?.message || "모임 마감에 실패했습니다.");
+    }
+  };
 
   const formatDate = (dateString: string) => {
     if (!dateString) return "날짜 정보 없음";
@@ -134,10 +144,13 @@ const MeetingManageModal = ({
   if (!isOpen) return null;
 
   const pendingParticipants = participants.filter(
-    (p) => p.status === "PENDING"
+    (p) => p.status === "PENDING",
   );
   const approvedParticipants = participants.filter(
-    (p) => p.status === "APPROVED"
+    (p) => p.status === "APPROVED",
+  );
+  const completedParticipants = participants.filter(
+    (p) => p.status === "COMPLETED",
   );
 
   return (
@@ -243,12 +256,54 @@ const MeetingManageModal = ({
                   </div>
                 )}
               </section>
+
+              {/* ✅ 완료된 참여자 섹션 추가 */}
+              {completedParticipants.length > 0 && (
+                <section className="manage-section">
+                  <h3 className="section-title">
+                    🏁 참여 완료 ({completedParticipants.length})
+                  </h3>
+                  <div className="participant-list">
+                    {completedParticipants.map((p) => (
+                      <div
+                        key={p.participationId}
+                        className="participant-item completed"
+                      >
+                        <div className="participant-info">
+                          <div className="participant-avatar">
+                            {p.profileImage ? (
+                              <img src={p.profileImage} alt={p.username} />
+                            ) : (
+                              p.username.charAt(0)
+                            )}
+                          </div>
+                          <div className="participant-details">
+                            <div className="participant-name">{p.username}</div>
+                            <div className="participant-date">
+                              {formatDate(p.createdAt)}
+                            </div>
+                          </div>
+                        </div>
+                        <span className="status-badge completed">완료</span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
             </>
           )}
         </div>
 
         {/* 하단 버튼 */}
         <div className="modal-footer">
+          {/* ✅ 모임 마감 버튼 추가 */}
+          <button
+            className="btn-complete"
+            onClick={handleCompleteMeeting}
+            disabled={approvedParticipants.length === 0}
+          >
+            🏁 모임 마감
+          </button>
           <button
             className="btn-edit"
             onClick={() => {
@@ -258,12 +313,16 @@ const MeetingManageModal = ({
           >
             ✏️ 모임 수정
           </button>
-            <button
-                className="btn-delete"
-                onClick={handleDeleteMeeting}
-            >
-                🗑️ 모임 삭제
-            </button>
+          <button
+            className="btn-delete"
+            onClick={() => {
+              if (confirm("정말 모임을 삭제하시겠습니까?")) {
+                alert("모임 삭제 기능은 아직 구현 중입니다.");
+              }
+            }}
+          >
+            🗑️ 삭제
+          </button>
         </div>
       </div>
     </div>

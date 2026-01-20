@@ -8,6 +8,7 @@ import com.project.itda.domain.meeting.dto.response.MeetingDetailResponse;
 import com.project.itda.domain.meeting.dto.response.MeetingResponse;
 import com.project.itda.domain.meeting.service.MeetingSearchService;
 import com.project.itda.domain.meeting.service.MeetingService;
+import com.project.itda.domain.participation.service.ParticipationService;
 import com.project.itda.domain.user.entity.User;
 import com.project.itda.domain.user.repository.UserRepository;
 import io.swagger.v3.oas.annotations.Operation;
@@ -18,10 +19,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.util.Map;
 
 /**
  * 모임 컨트롤러 (CRUD)
@@ -35,6 +37,7 @@ public class MeetingController {
 
     private final MeetingService meetingService;
     private final MeetingSearchService meetingSearchService;
+    private final ParticipationService participationService;  // ✅ 추가
     private final UserRepository userRepository;
 
     /**
@@ -46,22 +49,16 @@ public class MeetingController {
     )
     @PostMapping
     public ResponseEntity<MeetingResponse> createMeeting(
-            Authentication authentication,
-            @RequestBody MeetingCreateRequest request
+            @AuthenticationPrincipal Long userId,
+            @Valid @RequestBody MeetingCreateRequest request
     ) {
-        if (authentication == null) {
-            throw new IllegalStateException("인증 정보가 없습니다.");
-        }
-
-        Object principal = authentication.getPrincipal();
-        log.info("principal type = {}", principal.getClass());
-
-        Long userId = (Long) principal;
+        log.info("📍 POST /api/meetings - userId: {}", userId);
 
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
 
         MeetingResponse response = meetingService.createMeeting(user, request);
+
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
@@ -80,12 +77,12 @@ public class MeetingController {
                 category, keyword, page);
 
         MeetingSearchRequest request = new MeetingSearchRequest(
-                keyword,      // keyword
-                category,     // category
-                null,         // subcategory
-                null, null,   // startDate, endDate
-                null, null, null,  // latitude, longitude, radius
-                null, null, null, null,  // locationType, vibe, timeSlot, status
+                keyword,
+                category,
+                null,
+                null, null,
+                null, null, null,
+                null, null, null, null,
                 page, size, "createdAt", "desc"
         );
 
@@ -93,25 +90,6 @@ public class MeetingController {
 
         return ResponseEntity.ok(response);
     }
-
-    /**
-     * 모임 상세 조회
-     */
-//    @Operation(
-//            summary = "모임 상세 조회",
-//            description = "모임의 상세 정보를 조회합니다"
-//    )
-//    @GetMapping("/{meetingId}")
-//    public ResponseEntity<MeetingDetailResponse> getMeeting(
-//            @Parameter(description = "모임 ID", required = true)
-//            @PathVariable Long meetingId
-//    ) {
-//        log.info("📍 GET /api/meetings/{}", meetingId);
-//
-//        MeetingDetailResponse response = meetingService.getMeetingDetail(meetingId);
-//
-//        return ResponseEntity.ok(response);
-//    }
 
     /**
      * 모임 상세 조회 (참여자 포함)
@@ -179,7 +157,9 @@ public class MeetingController {
         return ResponseEntity.noContent().build();
     }
 
-    // MeetingController.java
+    /**
+     * 모임 이미지 업로드
+     */
     @PostMapping("/{meetingId}/image")
     public ResponseEntity<String> uploadMeetingImage(
             @AuthenticationPrincipal Long userId,

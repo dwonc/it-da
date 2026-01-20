@@ -1,7 +1,7 @@
 package com.project.itda.domain.user.entity;
 
 import com.project.itda.domain.meeting.entity.Meeting;
-import com.project.itda.domain.meeting.entity.MeetingParticipation;
+import com.project.itda.domain.participation.entity.Participation;
 import com.project.itda.domain.user.enums.SentimentType;
 import jakarta.persistence.*;
 import lombok.*;
@@ -9,12 +9,12 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "reviews") // ✅ 테이블명은 그대로
+@Table(name = "reviews")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Builder
-public class UserReview { // ✅ 클래스명만 변경
+public class UserReview {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -23,7 +23,7 @@ public class UserReview { // ✅ 클래스명만 변경
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "participation_id")
-    private MeetingParticipation participation;
+    private Participation participation;  // ✅ Participation으로 변경!
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "user_id")

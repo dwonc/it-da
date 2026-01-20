@@ -145,6 +145,26 @@ public class ParticipationService {
 
         log.info("✅ 참여 승인 완료 - participationId: {}", participationId);
 
+        // ✅ 참여자에게 승인 알림 + 참여 모임 카운트 업데이트
+        try {
+            User participant = participation.getUser();
+
+            // 참여 모임 카운트 조회
+            long participationCount = participationRepository.countByUserIdAndStatus(
+                    participant.getUserId(), ParticipationStatus.APPROVED);
+
+            // WebSocket으로 참여자에게 업데이트 전송
+            notificationService.notifyParticipationApproved(
+                    participant,
+                    meeting.getMeetingId(),
+                    meeting.getTitle(),
+                    participationCount
+            );
+            log.info("🔔 참여 승인 알림 전송: {} (참여 모임: {}개)", participant.getUsername(), participationCount);
+        } catch (Exception e) {
+            log.error("❌ 참여 승인 알림 전송 실패: {}", e.getMessage());
+        }
+
         return toParticipationResponse(participation);
     }
 
@@ -281,6 +301,50 @@ public class ParticipationService {
         double distance = R * c;
 
         return Math.round(distance * 100.0) / 100.0;
+    }
+
+    /**
+     * ✅ 모임 마감 (주최자만)
+     * 모든 APPROVED 참여자를 COMPLETED로 변경 + 실시간 알림
+     */
+    @Transactional
+    public int completeMeeting(User organizer, Long meetingId) {
+        log.info("🏁 모임 마감 - organizerId: {}, meetingId: {}", organizer.getUserId(), meetingId);
+
+        Meeting meeting = meetingRepository.findById(meetingId)
+                .orElseThrow(() -> new IllegalArgumentException("모임을 찾을 수 없습니다"));
+
+        // 주최자 확인
+        if (!meeting.isOrganizer(organizer.getUserId())) {
+            throw new IllegalStateException("주최자만 모임을 마감할 수 있습니다");
+        }
+
+        // APPROVED 상태인 모든 참여자 조회
+        List<Participation> approvedParticipations = participationRepository
+                .findByMeetingIdAndStatus(meetingId, ParticipationStatus.APPROVED);
+
+        // 각 참여자를 COMPLETED로 변경 + 알림 전송
+        int count = 0;
+        for (Participation participation : approvedParticipations) {
+            participation.complete();
+            count++;
+
+            // ✅ 각 참여자에게 모임 완료 알림 전송 (실시간!)
+            try {
+                notificationService.notifyMeetingCompleted(
+                        participation.getUser(),
+                        meeting.getMeetingId(),
+                        meeting.getTitle()
+                );
+                log.info("🔔 모임 완료 알림 전송: userId={}", participation.getUser().getUserId());
+            } catch (Exception e) {
+                log.error("❌ 알림 전송 실패: {}", e.getMessage());
+            }
+        }
+
+        log.info("🏁 모임 마감 완료 - meetingId: {}, completedCount: {}", meetingId, count);
+
+        return count;
     }
 
     /**

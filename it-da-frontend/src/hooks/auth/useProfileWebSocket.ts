@@ -18,6 +18,13 @@ export interface ProfileUpdate {
     mbti?: string;
     address?: string;
     isPublic?: boolean;
+    // ✅ 참여 모임 카운트 등 동적 필드용 추가
+    field?: string;
+    value?: string | number | boolean;
+    // ✅ 모임 완료 알림용 추가
+    meetingId?: number;
+    meetingTitle?: string;
+
 }
 
 interface UseProfileWebSocketOptions {
@@ -26,7 +33,7 @@ interface UseProfileWebSocketOptions {
     onProfileUpdate?: (update: ProfileUpdate) => void;
     onFollowRequest?: (update: ProfileUpdate) => void;
     onFollowAccepted?: (update: ProfileUpdate) => void;
-    onFollowRejected?: (update: ProfileUpdate) => void;  // ✅ 추가!
+    onFollowRejected?: (update: ProfileUpdate) => void;
 }
 
 export function useProfileWebSocket({
@@ -35,7 +42,7 @@ export function useProfileWebSocket({
                                         onProfileUpdate,
                                         onFollowRequest,
                                         onFollowAccepted,
-                                        onFollowRejected  // ✅ 추가!
+                                        onFollowRejected
                                     }: UseProfileWebSocketOptions) {
     const clientRef = useRef<Client | null>(null);
     const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -47,6 +54,7 @@ export function useProfileWebSocket({
             case 'PROFILE_UPDATE':
             case 'PROFILE_FOLLOWING_UPDATE':
             case 'PROFILE_INFO_UPDATE':
+            case 'MEETING_COMPLETED':  // ✅ 모임 완료 타입 추가
                 onProfileUpdate?.(data);
                 break;
 
@@ -60,7 +68,7 @@ export function useProfileWebSocket({
                 onFollowAccepted?.(data);
                 break;
 
-            case 'FOLLOW_REJECTED':  // ✅ 추가!
+            case 'FOLLOW_REJECTED':
                 console.log('❌ 팔로우 거절 알림:', data.fromUsername);
                 onFollowRejected?.(data);
                 break;
