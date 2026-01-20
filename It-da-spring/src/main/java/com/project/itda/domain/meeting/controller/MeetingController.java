@@ -8,6 +8,7 @@ import com.project.itda.domain.meeting.dto.response.MeetingDetailResponse;
 import com.project.itda.domain.meeting.dto.response.MeetingResponse;
 import com.project.itda.domain.meeting.service.MeetingSearchService;
 import com.project.itda.domain.meeting.service.MeetingService;
+import com.project.itda.domain.participation.service.ParticipationService;
 import com.project.itda.domain.user.entity.User;
 import com.project.itda.domain.user.repository.UserRepository;
 import io.swagger.v3.oas.annotations.Operation;
@@ -22,6 +23,8 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.Map;
+
 /**
  * 모임 컨트롤러 (CRUD)
  */
@@ -34,6 +37,7 @@ public class MeetingController {
 
     private final MeetingService meetingService;
     private final MeetingSearchService meetingSearchService;
+    private final ParticipationService participationService;  // ✅ 추가
     private final UserRepository userRepository;
 
     /**
@@ -45,12 +49,11 @@ public class MeetingController {
     )
     @PostMapping
     public ResponseEntity<MeetingResponse> createMeeting(
-            @AuthenticationPrincipal Long userId,  // ✅ User 대신 Long (userId)
+            @AuthenticationPrincipal Long userId,
             @Valid @RequestBody MeetingCreateRequest request
     ) {
         log.info("📍 POST /api/meetings - userId: {}", userId);
 
-        // ✅ User 조회
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
 
@@ -61,7 +64,6 @@ public class MeetingController {
 
     /**
      * 모임 목록 조회 (React용 GET)
-     * GET /api/meetings
      */
     @GetMapping
     public ResponseEntity<MeetingSearchResponse> getAllMeetings(
@@ -74,12 +76,12 @@ public class MeetingController {
                 category, keyword, page);
 
         MeetingSearchRequest request = new MeetingSearchRequest(
-                keyword,      // keyword
-                category,     // category
-                null,         // subcategory
-                null, null,   // startDate, endDate
-                null, null, null,  // latitude, longitude, radius
-                null, null, null, null,  // locationType, vibe, timeSlot, status
+                keyword,
+                category,
+                null,
+                null, null,
+                null, null, null,
+                null, null, null, null,
                 page, size, "createdAt", "desc"
         );
 
@@ -87,25 +89,6 @@ public class MeetingController {
 
         return ResponseEntity.ok(response);
     }
-
-    /**
-     * 모임 상세 조회
-     */
-//    @Operation(
-//            summary = "모임 상세 조회",
-//            description = "모임의 상세 정보를 조회합니다"
-//    )
-//    @GetMapping("/{meetingId}")
-//    public ResponseEntity<MeetingDetailResponse> getMeeting(
-//            @Parameter(description = "모임 ID", required = true)
-//            @PathVariable Long meetingId
-//    ) {
-//        log.info("📍 GET /api/meetings/{}", meetingId);
-//
-//        MeetingDetailResponse response = meetingService.getMeetingDetail(meetingId);
-//
-//        return ResponseEntity.ok(response);
-//    }
 
     /**
      * 모임 상세 조회 (참여자 포함)
@@ -173,7 +156,9 @@ public class MeetingController {
         return ResponseEntity.noContent().build();
     }
 
-    // MeetingController.java
+    /**
+     * 모임 이미지 업로드
+     */
     @PostMapping("/{meetingId}/image")
     public ResponseEntity<String> uploadMeetingImage(
             @AuthenticationPrincipal Long userId,
@@ -188,4 +173,31 @@ public class MeetingController {
         return ResponseEntity.ok(imageUrl);
     }
 
+    /**
+     * ✅ 모임 마감 (주최자만)
+     * 모든 APPROVED 참여자를 COMPLETED로 변경
+     */
+    @Operation(
+            summary = "모임 마감",
+            description = "모임을 마감하고 모든 승인된 참여자를 완료 상태로 변경합니다 (주최자만 가능)"
+    )
+    @PostMapping("/{meetingId}/complete")
+    public ResponseEntity<Map<String, Object>> completeMeeting(
+            @AuthenticationPrincipal Long userId,
+            @Parameter(description = "모임 ID", required = true)
+            @PathVariable Long meetingId
+    ) {
+        log.info("📍 POST /api/meetings/{}/complete - userId: {}", meetingId, userId);
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+
+        int completedCount = participationService.completeMeeting(user, meetingId);
+
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "message", "모임이 마감되었습니다.",
+                "completedParticipants", completedCount
+        ));
+    }
 }

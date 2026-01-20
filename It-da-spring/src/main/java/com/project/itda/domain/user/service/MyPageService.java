@@ -1,13 +1,13 @@
 package com.project.itda.domain.user.service;
 
 import com.project.itda.domain.meeting.entity.Meeting;
-import com.project.itda.domain.meeting.entity.MeetingParticipation;
+import com.project.itda.domain.participation.entity.Participation;
+import com.project.itda.domain.participation.enums.ParticipationStatus;
+import com.project.itda.domain.participation.repository.ParticipationRepository;
 import com.project.itda.domain.user.dto.response.MyMeetingResponse;
 import com.project.itda.domain.user.dto.response.MyReviewResponse;
 import com.project.itda.domain.user.dto.response.PendingReviewResponse;
 import com.project.itda.domain.user.entity.UserReview;
-import com.project.itda.domain.user.enums.ParticipationStatus;
-import com.project.itda.domain.user.repository.MeetingParticipationRepository;
 import com.project.itda.domain.user.repository.UserReviewRepository;
 import com.project.itda.domain.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -30,23 +30,23 @@ import java.util.stream.Collectors;
 public class MyPageService {
 
     private final UserRepository userRepository;
-    private final MeetingParticipationRepository participationRepository;
+    private final ParticipationRepository participationRepository;  // ✅ 변경!
     private final UserReviewRepository userReviewRepository;
 
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final DateTimeFormatter DATETIME_FORMAT = DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm");
 
-    // ✅ 수정: 유저 존재 여부만 체크 (권한 체크는 Controller에서 처리)
     private void validateUserExists(Long userId) {
         userRepository.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "사용자를 찾을 수 없습니다."));
     }
 
     public List<PendingReviewResponse> getPendingReviews(Long userId, Long currentUserId) {
-        validateUserExists(userId);  // ✅ 수정
+        validateUserExists(userId);
 
-        List<MeetingParticipation> completedParticipations =
-                participationRepository.findByUserUserIdAndStatusOrderByIdDesc(userId, ParticipationStatus.COMPLETED);
+        // ✅ COMPLETED 상태 참여 조회
+        List<Participation> completedParticipations =
+                participationRepository.findByUserIdAndStatus(userId, ParticipationStatus.COMPLETED);
 
         if (completedParticipations.isEmpty()) {
             return List.of();
@@ -75,7 +75,7 @@ public class MyPageService {
     }
 
     public List<MyReviewResponse> getMyReviews(Long userId, Long currentUserId) {
-        validateUserExists(userId);  // ✅ 수정
+        validateUserExists(userId);
 
         List<UserReview> reviews = userReviewRepository.findByUserUserIdOrderByCreatedAtDesc(userId);
 
@@ -91,19 +91,25 @@ public class MyPageService {
                 .toList();
     }
 
+    // ✅ APPROVED 상태 참여 조회로 변경!
     public List<MyMeetingResponse> getUpcomingMeetings(Long userId, Long currentUserId) {
-        validateUserExists(userId);  // ✅ 수정
+        validateUserExists(userId);
 
-        List<MeetingParticipation> upcomingParticipations =
-                participationRepository.findByUserUserIdAndStatusOrderByIdDesc(userId, ParticipationStatus.UPCOMING);
+        // ✅ APPROVED 상태 = 승인된 참여 (예정 모임)
+        List<Participation> approvedParticipations =
+                participationRepository.findByUserIdAndStatus(userId, ParticipationStatus.APPROVED);
 
-        return upcomingParticipations.stream()
+        log.info("📋 예정 모임 조회: userId={}, count={}", userId, approvedParticipations.size());
+
+        return approvedParticipations.stream()
                 .map(p -> {
                     Meeting m = p.getMeeting();
                     return MyMeetingResponse.builder()
                             .meetingId(m.getMeetingId())
                             .meetingTitle(m.getTitle())
-                            .dateTime(m.getMeetingTime().format(DATETIME_FORMAT))
+                            .dateTime(m.getMeetingTime() != null
+                                    ? m.getMeetingTime().format(DATETIME_FORMAT)
+                                    : "미정")
                             .location(m.getLocationName())
                             .statusText("예정")
                             .averageRating(m.getAvgRating())
@@ -113,11 +119,14 @@ public class MyPageService {
                 .toList();
     }
 
+    // ✅ COMPLETED 상태 참여 조회
     public List<MyMeetingResponse> getCompletedMeetings(Long userId, Long currentUserId) {
-        validateUserExists(userId);  // ✅ 수정
+        validateUserExists(userId);
 
-        List<MeetingParticipation> completedParticipations =
-                participationRepository.findByUserUserIdAndStatusOrderByIdDesc(userId, ParticipationStatus.COMPLETED);
+        List<Participation> completedParticipations =
+                participationRepository.findByUserIdAndStatus(userId, ParticipationStatus.COMPLETED);
+
+        log.info("📋 완료 모임 조회: userId={}, count={}", userId, completedParticipations.size());
 
         if (completedParticipations.isEmpty()) {
             return List.of();
@@ -143,7 +152,9 @@ public class MyPageService {
                     return MyMeetingResponse.builder()
                             .meetingId(m.getMeetingId())
                             .meetingTitle(m.getTitle())
-                            .dateTime(displayTime.format(DATETIME_FORMAT))
+                            .dateTime(displayTime != null
+                                    ? displayTime.format(DATETIME_FORMAT)
+                                    : "미정")
                             .location(m.getLocationName())
                             .statusText("완료")
                             .averageRating(m.getAvgRating())

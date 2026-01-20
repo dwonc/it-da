@@ -83,4 +83,42 @@ public class PushNotificationService {
             log.error("❌ 모든 알림 읽음 푸시 실패: error={}", e.getMessage(), e);
         }
     }
+
+    /**
+     * 프로필 업데이트 푸시 (참여 모임, 배지 등)
+     */
+    public void pushProfileUpdate(Long userId, String field, Object value) {
+        try {
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("type", "PROFILE_UPDATE");
+            payload.put("field", field);
+            payload.put("value", value);
+
+            // /topic/profile/{userId} 로 프로필 업데이트 전송
+            messagingTemplate.convertAndSend("/topic/profile/" + userId, payload);
+
+            log.info("📤 프로필 업데이트 푸시: userId={}, field={}, value={}", userId, field, value);
+        } catch (Exception e) {
+            log.error("❌ 프로필 업데이트 푸시 실패: userId={}, error={}", userId, e.getMessage(), e);
+        }
+    }
+
+    /**
+     * ✅ 모임 완료 알림 푸시 (마이페이지 실시간 새로고침용)
+     */
+    public void pushMeetingCompleted(Long userId, Long meetingId, String meetingTitle) {
+        try {
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("type", "MEETING_COMPLETED");
+            payload.put("meetingId", meetingId);
+            payload.put("meetingTitle", meetingTitle);
+
+            // /topic/profile/{userId} 로 모임 완료 알림 전송
+            messagingTemplate.convertAndSend("/topic/profile/" + userId, payload);
+
+            log.info("📤 모임 완료 푸시: userId={}, meetingId={}, title={}", userId, meetingId, meetingTitle);
+        } catch (Exception e) {
+            log.error("❌ 모임 완료 푸시 실패: userId={}, error={}", userId, e.getMessage(), e);
+        }
+    }
 }

@@ -1,14 +1,14 @@
 package com.project.itda.domain.user.service;
 
 import com.project.itda.domain.meeting.entity.Meeting;
-import com.project.itda.domain.meeting.entity.MeetingParticipation;
 import com.project.itda.domain.meeting.repository.MeetingRepository;
+import com.project.itda.domain.participation.entity.Participation;
+import com.project.itda.domain.participation.enums.ParticipationStatus;
+import com.project.itda.domain.participation.repository.ParticipationRepository;
 import com.project.itda.domain.user.dto.request.ReviewCreateRequest;
 import com.project.itda.domain.user.entity.User;
 import com.project.itda.domain.user.entity.UserReview;
-import com.project.itda.domain.user.enums.ParticipationStatus;
 import com.project.itda.domain.user.enums.SentimentType;
-import com.project.itda.domain.user.repository.MeetingParticipationRepository;
 import com.project.itda.domain.user.repository.UserRepository;
 import com.project.itda.domain.user.repository.UserReviewRepository;
 import lombok.RequiredArgsConstructor;
@@ -28,7 +28,7 @@ public class UserReviewService {
 
     private final UserRepository userRepository;
     private final MeetingRepository meetingRepository;
-    private final MeetingParticipationRepository participationRepository;
+    private final ParticipationRepository participationRepository;  // ✅ 변경!
     private final UserReviewRepository userReviewRepository;
     private final SentimentAnalyzer sentimentAnalyzer;
 
@@ -42,16 +42,18 @@ public class UserReviewService {
         Meeting meeting = meetingRepository.findById(meetingId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "모임을 찾을 수 없습니다."));
 
-        MeetingParticipation participation = participationRepository
-                .findByUserUserIdAndMeetingMeetingId(currentUserId, meetingId)
+        // ✅ Participation 테이블에서 조회!
+        Participation participation = participationRepository
+                .findByUserIdAndMeetingId(currentUserId, meetingId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.BAD_REQUEST,
                         "해당 모임에 참여 기록이 없습니다."));
 
+        // ✅ COMPLETED 상태 확인
         if (participation.getStatus() != ParticipationStatus.COMPLETED) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "참여 완료된 모임만 후기를 작성할 수 있습니다.");
+                    "참여 완료된 모임만 후기를 작성할 수 있습니다. 현재 상태: " + participation.getStatus());
         }
 
         if (userReviewRepository.existsByUserUserIdAndMeetingMeetingId(currentUserId, meetingId)) {
@@ -63,7 +65,7 @@ public class UserReviewService {
         UserReview review = UserReview.builder()
                 .user(user)
                 .meeting(meeting)
-                .participation(participation)
+                .participation(participation)  // ✅ participation 추가!
                 .rating(request.getRating())
                 .reviewText(request.getContent())
                 .sentiment(sentiment)
@@ -73,7 +75,7 @@ public class UserReviewService {
                 .build();
 
         UserReview savedReview = userReviewRepository.save(review);
-        log.info("후기 작성 완료: reviewId={}, sentiment={}", savedReview.getReviewId(), sentiment);
+        log.info("✅ 후기 작성 완료: reviewId={}, sentiment={}", savedReview.getReviewId(), sentiment);
 
         return savedReview;
     }
