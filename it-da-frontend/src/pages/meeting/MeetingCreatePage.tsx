@@ -34,7 +34,7 @@ const MeetingCreatePage = () => {
   const [formData, setFormData] = useState({
     title: "",
     category: "",
-    subcategory: "", // ✅ 추가
+    subcategory: "",
     description: "",
     meetingDate: "",
     meetingTime: "",
@@ -52,7 +52,7 @@ const MeetingCreatePage = () => {
     longitude: 126.978,
     address: "",
   });
-  const [locationSearchInput, setLocationSearchInput] = useState(""); // 검색어 입력용
+  const [locationSearchInput, setLocationSearchInput] = useState("");
   const [locationResults, setLocationResults] = useState<any[]>([]);
   const [showLocationResults, setShowLocationResults] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
@@ -60,6 +60,9 @@ const MeetingCreatePage = () => {
   const [loading, setLoading] = useState(false);
   const [uploadedImage, setUploadedImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>("");
+
+  // ✅ 임시저장 불러왔는지 여부
+  const [draftLoaded, setDraftLoaded] = useState(false);
 
   // 카테고리 옵션
   const categories = [
@@ -113,11 +116,97 @@ const MeetingCreatePage = () => {
 
   const isToday = formData.meetingDate === minDate;
 
+  // ✅ 임시저장 불러오기 (페이지 로드 시)
+  useEffect(() => {
+    const savedDraft = localStorage.getItem("meetingDraft");
+
+    if (savedDraft) {
+      try {
+        const draft = JSON.parse(savedDraft);
+        console.log("📂 임시저장 데이터 발견:", draft);
+
+        // 임시저장 데이터가 있으면 사용자에게 확인
+        const useDraft = window.confirm(
+          "💾 임시저장된 모임이 있습니다.\n이어서 작성하시겠습니까?",
+        );
+
+        if (useDraft) {
+          // 폼 데이터 복원
+          setFormData({
+            title: draft.title || "",
+            category: draft.category || "",
+            subcategory: draft.subcategory || "",
+            description: draft.description || "",
+            meetingDate: draft.meetingDate || "",
+            meetingTime: draft.meetingTime || "",
+            detailAddress: draft.detailAddress || "",
+            maxParticipants: draft.maxParticipants || 10,
+            deadline: draft.deadline || "",
+            cost: draft.cost || 0,
+            supplies: draft.supplies || "",
+          });
+
+          // 분위기 복원
+          if (draft.selectedVibe) {
+            setSelectedVibe(draft.selectedVibe);
+          }
+
+          // 장소 복원
+          if (draft.selectedLocation) {
+            setSelectedLocation(draft.selectedLocation);
+          }
+
+          // 태그 복원
+          if (draft.tags && Array.isArray(draft.tags)) {
+            setTags(draft.tags);
+          }
+
+          console.log("✅ 임시저장 데이터 복원 완료!");
+          setDraftLoaded(true);
+        } else {
+          // 사용 안 하면 삭제
+          localStorage.removeItem("meetingDraft");
+          console.log("🗑️ 임시저장 데이터 삭제됨");
+        }
+      } catch (error) {
+        console.error("❌ 임시저장 데이터 파싱 실패:", error);
+        localStorage.removeItem("meetingDraft");
+      }
+    }
+  }, []);
+
+  // ✅ 장소 복원 후 지도 업데이트
+  useEffect(() => {
+    if (
+      draftLoaded &&
+      selectedLocation.latitude &&
+      selectedLocation.longitude &&
+      mapRef.current
+    ) {
+      const coords = new window.kakao.maps.LatLng(
+        selectedLocation.latitude,
+        selectedLocation.longitude,
+      );
+
+      mapRef.current.setCenter(coords);
+
+      if (markerRef.current) {
+        markerRef.current.setMap(null);
+      }
+
+      markerRef.current = new window.kakao.maps.Marker({
+        position: coords,
+        map: mapRef.current,
+      });
+
+      console.log("🗺️ 지도 위치 복원 완료");
+    }
+  }, [draftLoaded, selectedLocation]);
+
   // 카카오맵 초기화
   useEffect(() => {
     console.log("🗺️ 카카오맵 스크립트 로딩 시작");
 
-    // 카카오맵 스크립트
     const mapScript = document.createElement("script");
     const apiKey = import.meta.env.VITE_KAKAO_MAP_KEY || "YOUR_KAKAO_API_KEY";
     mapScript.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${apiKey}&libraries=services&autoload=false`;
@@ -131,16 +220,19 @@ const MeetingCreatePage = () => {
         console.log("🗺️ 지도 컨테이너:", container);
 
         if (container) {
+          // ✅ 임시저장된 위치가 있으면 그 위치로, 없으면 기본 위치
+          const initialLat = selectedLocation.latitude || 37.5665;
+          const initialLng = selectedLocation.longitude || 126.978;
+
           const options = {
-            center: new window.kakao.maps.LatLng(37.5665, 126.978),
+            center: new window.kakao.maps.LatLng(initialLat, initialLng),
             level: 3,
           };
           mapRef.current = new window.kakao.maps.Map(container, options);
           console.log("✅ 지도 생성 완료");
 
-          // 초기 마커 생성
           markerRef.current = new window.kakao.maps.Marker({
-            position: new window.kakao.maps.LatLng(37.5665, 126.978),
+            position: new window.kakao.maps.LatLng(initialLat, initialLng),
             map: mapRef.current,
           });
           console.log("✅ 마커 생성 완료");
@@ -155,7 +247,6 @@ const MeetingCreatePage = () => {
       console.error("API Key:", apiKey);
     };
 
-    // Daum 주소 검색 스크립트
     const addrScript = document.createElement("script");
     addrScript.src =
       "https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js";
@@ -186,16 +277,14 @@ const MeetingCreatePage = () => {
   const handleChange = (
     e: React.ChangeEvent<
       HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
-    >
+    >,
   ) => {
     const { name, value } = e.target;
     setFormData((prev) => {
-      // ✅ 카테고리 바꾸면 서브카테고리 초기화
       if (name === "category") {
         return { ...prev, category: value, subcategory: "" };
       }
 
-      // ✅ cost는 항상 0 이상의 숫자로
       if (name === "cost") {
         const numValue = value === "" ? 0 : parseInt(value);
         return { ...prev, cost: Math.max(0, numValue || 0) };
@@ -214,19 +303,16 @@ const MeetingCreatePage = () => {
   const handleLocationSearch = () => {
     new (window as any).daum.Postcode({
       oncomplete: function (data: any) {
-        // 주소 정보
-        const fullAddress = data.address; // 지번 주소
-        const roadAddress = data.roadAddress; // 도로명 주소
+        const fullAddress = data.address;
+        const roadAddress = data.roadAddress;
         const selectedAddr = roadAddress || fullAddress;
 
-        // 선택한 주소로 업데이트
         setSelectedLocation({
           ...selectedLocation,
           name: data.buildingName || selectedAddr,
           address: selectedAddr,
         });
 
-        // 카카오맵 Geocoder로 좌표 변환
         if (window.kakao && window.kakao.maps) {
           const geocoder = new window.kakao.maps.services.Geocoder();
 
@@ -236,10 +322,9 @@ const MeetingCreatePage = () => {
               if (status === window.kakao.maps.services.Status.OK) {
                 const coords = new window.kakao.maps.LatLng(
                   result[0].y,
-                  result[0].x
+                  result[0].x,
                 );
 
-                // 위치 정보 저장
                 setSelectedLocation({
                   name: data.buildingName || selectedAddr,
                   address: selectedAddr,
@@ -247,23 +332,20 @@ const MeetingCreatePage = () => {
                   longitude: parseFloat(result[0].x),
                 });
 
-                // 지도 중심 이동
                 if (mapRef.current) {
                   mapRef.current.setCenter(coords);
 
-                  // 기존 마커 제거
                   if (markerRef.current) {
                     markerRef.current.setMap(null);
                   }
 
-                  // 새 마커 생성
                   markerRef.current = new window.kakao.maps.Marker({
                     position: coords,
                     map: mapRef.current,
                   });
                 }
               }
-            }
+            },
           );
         }
       },
@@ -298,7 +380,6 @@ const MeetingCreatePage = () => {
       }
       setUploadedImage(file);
 
-      // 미리보기
       const reader = new FileReader();
       reader.onloadend = () => {
         setImagePreview(reader.result as string);
@@ -307,16 +388,52 @@ const MeetingCreatePage = () => {
     }
   };
 
-  // 임시저장
+  // ✅ 임시저장 (개선)
   const handleSaveDraft = () => {
-    const draft = { ...formData, selectedVibe, selectedLocation, tags };
+    const draft = {
+      ...formData,
+      selectedVibe,
+      selectedLocation,
+      tags,
+    };
     localStorage.setItem("meetingDraft", JSON.stringify(draft));
-    alert("💾 임시저장되었습니다!");
+    console.log("💾 임시저장 완료:", draft);
+    alert(
+      "💾 임시저장되었습니다!\n다음에 모임 만들기에 들어오면 이어서 작성할 수 있어요.",
+    );
+  };
+
+  // ✅ 임시저장 삭제
+  const handleClearDraft = () => {
+    if (window.confirm("임시저장된 내용을 삭제하시겠습니까?")) {
+      localStorage.removeItem("meetingDraft");
+      setFormData({
+        title: "",
+        category: "",
+        subcategory: "",
+        description: "",
+        meetingDate: "",
+        meetingTime: "",
+        detailAddress: "",
+        maxParticipants: 10,
+        deadline: "",
+        cost: 0,
+        supplies: "",
+      });
+      setSelectedVibe("");
+      setSelectedLocation({
+        name: "",
+        latitude: 37.5665,
+        longitude: 126.978,
+        address: "",
+      });
+      setTags([]);
+      alert("🗑️ 임시저장이 삭제되었습니다.");
+    }
   };
 
   // 제출
   const handleSubmit = async () => {
-    // 유효성 검사
     if (!formData.title) {
       alert("모임 제목을 입력해주세요!");
       return;
@@ -345,7 +462,6 @@ const MeetingCreatePage = () => {
     setLoading(true);
 
     try {
-      // timeslot 계산
       const hour = parseInt(formData.meetingTime.split(":")[0]);
       let timeSlot = "EVENING";
       if (hour >= 6 && hour < 12) timeSlot = "MORNING";
@@ -377,9 +493,13 @@ const MeetingCreatePage = () => {
         "http://localhost:8080/api/meetings",
         requestData,
         {
-          withCredentials: true, // ✅ 이거 필수
-        }
+          withCredentials: true,
+        },
       );
+
+      // ✅ 모임 생성 성공 시 임시저장 삭제!
+      localStorage.removeItem("meetingDraft");
+      console.log("🗑️ 모임 생성 완료 → 임시저장 삭제");
 
       const meetingId = response.data.meetingId;
       alert("🎉 모임이 생성되었습니다!");
@@ -395,72 +515,80 @@ const MeetingCreatePage = () => {
   return (
     <div className="meeting-create-page">
       {/* 헤더 */}
-        <header className="header">
-            <div className="header-wrapper">
-                <div className="header-content">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                        <button
-                            onClick={() => navigate(-1)}
-                            style={{
-                                background: 'none',
-                                border: 'none',
-                                fontSize: '1.4rem',
-                                cursor: 'pointer',
-                                padding: '0.5rem',
-                                minWidth: '40px'
-                            }}
-                        >
-                            ←
-                        </button>
-                        <h1 style={{
-                            fontSize: '1.15rem',
-                            fontWeight: '700',
-                            margin: 0,
-                            whiteSpace: 'nowrap'
-                        }}>
-                            모임 만들기
-                        </h1>
-                    </div>
-
-                    <div style={{
-                        position: 'absolute',
-                        left: '50%',
-                        transform: 'translateX(-50%)'
-                    }}>
-                        <h1
-                            onClick={() => navigate("/")}
-                            style={{
-                                fontSize: '1.3rem',
-                                fontWeight: '800',
-                                margin: 0,
-                                cursor: 'pointer',
-                                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                                WebkitBackgroundClip: 'text',
-                                WebkitTextFillColor: 'transparent',
-                                backgroundClip: 'text'
-                            }}
-                        >
-                            IT-DA
-                        </h1>
-                    </div>
-
-                    <button
-                        onClick={handleSaveDraft}
-                        style={{
-                            padding: '0.55rem 1.1rem',
-                            background: 'white',
-                            border: '1.5px solid #dadce0',
-                            borderRadius: '8px',
-                            fontWeight: '500',
-                            cursor: 'pointer',
-                            whiteSpace: 'nowrap'
-                        }}
-                    >
-                        💾 임시저장
-                    </button>
-                </div>
+      <header className="header">
+        <div className="header-wrapper">
+          <div className="header-content">
+            <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+              <button
+                onClick={() => navigate(-1)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  fontSize: "1.4rem",
+                  cursor: "pointer",
+                  padding: "0.5rem",
+                  minWidth: "40px",
+                }}
+              >
+                ←
+              </button>
+              <h1
+                style={{
+                  fontSize: "1.15rem",
+                  fontWeight: "700",
+                  margin: 0,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                모임 만들기
+              </h1>
             </div>
-        </header>
+
+            <div
+              style={{
+                position: "absolute",
+                left: "50%",
+                transform: "translateX(-50%)",
+              }}
+            >
+              <h1
+                onClick={() => navigate("/meetings")}
+                style={{
+                  fontSize: "1.3rem",
+                  fontWeight: "800",
+                  margin: 0,
+                  cursor: "pointer",
+                  background:
+                    "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                  backgroundClip: "text",
+                }}
+              >
+                IT-DA
+              </h1>
+            </div>
+
+            {/* ✅ 임시저장 버튼들 */}
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <button
+                onClick={handleSaveDraft}
+                style={{
+                  padding: "0.55rem 1.1rem",
+                  background: "white",
+                  border: "1.5px solid #dadce0",
+                  borderRadius: "8px",
+                  fontWeight: "500",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                💾 임시저장
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
 
       {/* 메인 컨테이너 */}
       <div className="container" style={{ maxWidth: "1400px", width: "50%" }}>
@@ -582,83 +710,112 @@ const MeetingCreatePage = () => {
                 min={minDate}
                 onChange={handleChange}
               />
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem' }}>
-                    {/* 오전/오후 */}
-                    <select
-                        className="form-select"
-                        value={formData.meetingTime ? (parseInt(formData.meetingTime.split(':')[0]) < 12 ? 'AM' : 'PM') : ''}
-                        onChange={(e) => {
-                            const currentTime = formData.meetingTime || '00:00';
-                            const [oldHour, minute] = currentTime.split(':');
-                            let hour = parseInt(oldHour);
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr 1fr",
+                  gap: "0.5rem",
+                }}
+              >
+                {/* 오전/오후 */}
+                <select
+                  className="form-select"
+                  value={
+                    formData.meetingTime
+                      ? parseInt(formData.meetingTime.split(":")[0]) < 12
+                        ? "AM"
+                        : "PM"
+                      : ""
+                  }
+                  onChange={(e) => {
+                    const currentTime = formData.meetingTime || "00:00";
+                    const [oldHour, minute] = currentTime.split(":");
+                    let hour = parseInt(oldHour);
 
-                            if (e.target.value === 'PM' && hour < 12) {
-                                hour += 12;
-                            } else if (e.target.value === 'AM' && hour >= 12) {
-                                hour -= 12;
-                            }
+                    if (e.target.value === "PM" && hour < 12) {
+                      hour += 12;
+                    } else if (e.target.value === "AM" && hour >= 12) {
+                      hour -= 12;
+                    }
 
-                            setFormData(prev => ({
-                                ...prev,
-                                meetingTime: `${String(hour).padStart(2, '0')}:${minute}`
-                            }));
-                        }}
-                    >
-                        <option value="" disabled hidden>오전 오후</option>
-                        <option value="AM">오전</option>
-                        <option value="PM">오후</option>
-                    </select>
+                    setFormData((prev) => ({
+                      ...prev,
+                      meetingTime: `${String(hour).padStart(2, "0")}:${minute}`,
+                    }));
+                  }}
+                >
+                  <option value="" disabled hidden>
+                    오전 오후
+                  </option>
+                  <option value="AM">오전</option>
+                  <option value="PM">오후</option>
+                </select>
 
-                    {/* 시 */}
-                    <select
-                        className="form-select"
-                        value={formData.meetingTime ? String(parseInt(formData.meetingTime.split(':')[0]) % 12 || 12) : ''}
-                        onChange={(e) => {
-                            const currentTime = formData.meetingTime || '00:00';
-                            const [oldHour, minute] = currentTime.split(':');
-                            const isPM = parseInt(oldHour) >= 12;
-                            let hour = parseInt(e.target.value);
+                {/* 시 */}
+                <select
+                  className="form-select"
+                  value={
+                    formData.meetingTime
+                      ? String(
+                          parseInt(formData.meetingTime.split(":")[0]) % 12 ||
+                            12,
+                        )
+                      : ""
+                  }
+                  onChange={(e) => {
+                    const currentTime = formData.meetingTime || "00:00";
+                    const [oldHour, minute] = currentTime.split(":");
+                    const isPM = parseInt(oldHour) >= 12;
+                    let hour = parseInt(e.target.value);
 
-                            if (isPM && hour !== 12) hour += 12;
-                            if (!isPM && hour === 12) hour = 0;
+                    if (isPM && hour !== 12) hour += 12;
+                    if (!isPM && hour === 12) hour = 0;
 
-                            setFormData(prev => ({
-                                ...prev,
-                                meetingTime: `${String(hour).padStart(2, '0')}:${minute}`
-                            }));
-                        }}
-                    >
-                        <option value="" disabled hidden>시</option>
-                        {[...Array(12)].map((_, i) => (
-                            <option key={i + 1} value={i + 1}>
-                                {i + 1}시
-                            </option>
-                        ))}
-                    </select>
+                    setFormData((prev) => ({
+                      ...prev,
+                      meetingTime: `${String(hour).padStart(2, "0")}:${minute}`,
+                    }));
+                  }}
+                >
+                  <option value="" disabled hidden>
+                    시
+                  </option>
+                  {[...Array(12)].map((_, i) => (
+                    <option key={i + 1} value={i + 1}>
+                      {i + 1}시
+                    </option>
+                  ))}
+                </select>
 
-                    {/* 분 (10분 단위) */}
-                    <select
-                        className="form-select"
-                        value={formData.meetingTime ? formData.meetingTime.split(':')[1] : ''}
-                        onChange={(e) => {
-                            const currentTime = formData.meetingTime || '00:00';
-                            const hour = currentTime.split(':')[0];
+                {/* 분 (10분 단위) */}
+                <select
+                  className="form-select"
+                  value={
+                    formData.meetingTime
+                      ? formData.meetingTime.split(":")[1]
+                      : ""
+                  }
+                  onChange={(e) => {
+                    const currentTime = formData.meetingTime || "00:00";
+                    const hour = currentTime.split(":")[0];
 
-                            setFormData(prev => ({
-                                ...prev,
-                                meetingTime: `${hour}:${e.target.value}`
-                            }));
-                        }}
-                    >
-                        <option value="" disabled hidden>분</option>
-                        <option value="00">00분</option>
-                        <option value="10">10분</option>
-                        <option value="20">20분</option>
-                        <option value="30">30분</option>
-                        <option value="40">40분</option>
-                        <option value="50">50분</option>
-                    </select>
-                </div>
+                    setFormData((prev) => ({
+                      ...prev,
+                      meetingTime: `${hour}:${e.target.value}`,
+                    }));
+                  }}
+                >
+                  <option value="" disabled hidden>
+                    분
+                  </option>
+                  <option value="00">00분</option>
+                  <option value="10">10분</option>
+                  <option value="20">20분</option>
+                  <option value="30">30분</option>
+                  <option value="40">40분</option>
+                  <option value="50">50분</option>
+                </select>
+              </div>
             </div>
             <p className="helper-text">
               모임을 진행할 날짜와 시작 시간을 선택해주세요
