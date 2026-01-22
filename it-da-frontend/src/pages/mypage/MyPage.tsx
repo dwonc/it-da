@@ -25,6 +25,7 @@ import SettingsTab from "./components/SettingsTab";
 import ProfileEditModal from "./components/ProfileEditModal";
 import MeetingReviewsModal from "./components/MeetingReviewsModal";
 import MyReviewsModal from "./components/MyReviewsModal";
+import PreferenceEditModal from "./components/PreferenceEditModal";
 import {
     useProfileWebSocket,
     ProfileUpdate,
@@ -42,7 +43,7 @@ const MyPage: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [followLoading, setFollowLoading] = useState(false);
-
+    const [isPreferenceModalOpen, setIsPreferenceModalOpen] = useState(false);
     const [pendingReviews, setPendingReviews] = useState<PendingReview[]>([]);
     const [myReviews, setMyReviews] = useState<MyReview[]>([]);
     const [upcomingMeetings, setUpcomingMeetings] = useState<MyMeeting[]>([]);
@@ -510,6 +511,8 @@ const MyPage: React.FC = () => {
                                 isPublic={isPublic}
                                 onTogglePublic={handleTogglePublic}
                                 onDeleteAccount={handleDeleteAccount}
+                                onPreferenceEdit={() => setIsPreferenceModalOpen(true)}  // ✅ 추가
+
                             />
                         )}
                     </>
@@ -529,7 +532,11 @@ const MyPage: React.FC = () => {
                     void fetchFollowCounts();
                 }}
             />
-
+            <PreferenceEditModal
+                isOpen={isPreferenceModalOpen}
+                onClose={() => setIsPreferenceModalOpen(false)}
+                userId={currentUserId}
+            />
             <MeetingReviewsModal
                 isOpen={isMeetingReviewsOpen}
                 onClose={() => setIsMeetingReviewsOpen(false)}
