@@ -1,36 +1,26 @@
-// src/pages/mypage/MyBadgesPage.tsx
+// src/pages/badge/BadgeCatalogPage.tsx
 import React, { useEffect, useMemo, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useBadges } from "@/hooks/badge/useBadges";
 import type { UserBadgeDto } from "@/types/badge";
 import BadgeGrid from "@/components/badge/BadgeGrid";
 import BadgeDetailModal from "@/components/badge/BadgeDetailModal";
+import { formatBadgeName } from "@/utils/badge/formatBadgeName";
 import { getBadgeEmoji } from "@/utils/badge/getBadgeEmoji";
 
 type Tab = "EARNED" | "LOCKED";
 
-function safeNumber(v: unknown, fallback = 0): number {
-    return typeof v === "number" && Number.isFinite(v) ? v : fallback;
-}
-
-function parseUnlockedAt(b: UserBadgeDto): number {
-    if (!b.unlockedAt) return 0;
-    const t = Date.parse(b.unlockedAt);
-    return Number.isFinite(t) ? t : 0;
-}
-
-export default function MyBadgesPage(): React.ReactElement {
+export default function BadgeCatalogPage(): React.ReactElement {
     const navigate = useNavigate();
-    const location = useLocation();
 
     const { data, isLoading, isError, refetch } = useBadges();
-    const badges: UserBadgeDto[] = Array.isArray(data) ? (data as UserBadgeDto[]) : [];
+    const badges: UserBadgeDto[] = Array.isArray(data) ? data : [];
 
     const [tab, setTab] = useState<Tab>("EARNED");
     const [selected, setSelected] = useState<UserBadgeDto | null>(null);
-    const [open, setOpen] = useState<boolean>(false);
+    const [open, setOpen] = useState(false);
 
-    // ✅ 이 페이지에서만 강제로 "풀폭 + 흰 배경" + "가운데 몰림 방지"
+    // ✅ 이 페이지에서만: 강제로 풀폭 + 배경 통일 + 가운데 몰림 방지
     useEffect(() => {
         const html = document.documentElement;
         const body = document.body;
@@ -58,7 +48,6 @@ export default function MyBadgesPage(): React.ReactElement {
             root.style.width = "100%";
             root.style.margin = "0";
             root.style.display = "block";
-            // ✅ 어떤 레이아웃이 와도 가운데 몰림 방지용 초기화
             root.style.justifyContent = "initial";
             root.style.alignItems = "initial";
         }
@@ -86,65 +75,38 @@ export default function MyBadgesPage(): React.ReactElement {
     const recentTop3 = useMemo(() => {
         return earned
             .slice()
-            .sort((a, b) => {
-                const bt = parseUnlockedAt(b);
-                const at = parseUnlockedAt(a);
-                if (bt !== at) return bt - at;
-
-                const bid = safeNumber(b.badgeId, 0);
-                const aid = safeNumber(a.badgeId, 0);
-                return bid - aid;
-            })
+            .sort((a, b) => (Date.parse(b.unlockedAt ?? "") || 0) - (Date.parse(a.unlockedAt ?? "") || 0))
             .slice(0, 3);
     }, [earned]);
 
     const list = tab === "EARNED" ? earned : locked;
 
-    function handleClickBadge(b: UserBadgeDto) {
-        setSelected(b);
-        setOpen(true);
-    }
-
-    function handleCloseModal() {
-        setOpen(false);
-        setSelected(null);
-    }
-
-    // ✅ 핵심: "뒤로가기"가 히스토리 없으면 /badges로 보내기 (먹통/무한반복 방지)
-    function handleBack() {
-        if (window.history.length <= 1 || location.key === "default") {
-            navigate("/badges", { replace: true });
-            return;
-        }
-        navigate(-1);
-    }
-
     return (
         <div style={styles.page}>
             <div style={styles.container}>
+                {/* ✅ 헤더: 좌(화살표) / 중(도감) / 우(새로고침) */}
                 <header style={styles.header}>
                     <div style={styles.headerLeft}>
-                        {/* ✅ 전역 CSS가 color를 죽여도 안 사라지게: SVG path에 색 직접 지정 */}
                         <button
                             type="button"
                             style={styles.backBtn}
-                            onClick={handleBack}
-                            aria-label="뒤로가기"
-                            title="뒤로가기"
+                            onClick={() => navigate("/mypage/badges")}
+                            aria-label="마이페이지로 이동"
+                            title="마이페이지로 이동"
                         >
+                            {/* ✅ 문자(←) 대신 SVG 사용: 안 보이는 문제 원천 차단 */}
                             <svg
-                                width="20"
-                                height="20"
+                                width="18"
+                                height="18"
                                 viewBox="0 0 24 24"
                                 fill="none"
                                 xmlns="http://www.w3.org/2000/svg"
                                 aria-hidden="true"
-                                style={{ display: "block" }}
                             >
                                 <path
                                     d="M15 18L9 12L15 6"
-                                    stroke="#111827" // ✅ currentColor 금지
-                                    strokeWidth="3"
+                                    stroke="currentColor"
+                                    strokeWidth="2.5"
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
                                 />
@@ -155,12 +117,13 @@ export default function MyBadgesPage(): React.ReactElement {
                     <h1 style={styles.title}>도감</h1>
 
                     <div style={styles.headerRight}>
-                        <button type="button" onClick={() => void refetch()} style={styles.primaryBtn}>
+                        <button type="button" style={styles.primaryBtn} onClick={() => void refetch()}>
                             새로고침
                         </button>
                     </div>
                 </header>
 
+                {/* ✅ 최근 획득 (문구만 남김: "최근 획득 3개" -> "최근 획득") */}
                 <section style={{ marginTop: 18 }}>
                     <h2 style={styles.sectionTitle}>최근 획득</h2>
 
@@ -176,12 +139,15 @@ export default function MyBadgesPage(): React.ReactElement {
                                     <button
                                         key={String(b.badgeId ?? b.badgeCode)}
                                         type="button"
-                                        onClick={() => handleClickBadge(b)}
                                         style={styles.recentCard}
+                                        onClick={() => {
+                                            setSelected(b);
+                                            setOpen(true);
+                                        }}
                                     >
                                         <div style={styles.recentTop}>
                                             <div style={styles.recentIcon}>{getBadgeEmoji(b)}</div>
-                                            <div style={styles.recentName}>{b.badgeName ?? ""}</div>
+                                            <div style={styles.recentName}>{formatBadgeName(b.badgeName)}</div>
                                         </div>
                                         {b.description ? <div style={styles.recentDesc}>{b.description}</div> : null}
                                     </button>
@@ -191,31 +157,47 @@ export default function MyBadgesPage(): React.ReactElement {
                     )}
                 </section>
 
-                <section style={{ marginTop: 22 }}>
+                {/* 탭 */}
+                <section style={{ marginTop: 20 }}>
                     <div style={styles.tabs}>
                         <button
                             type="button"
                             onClick={() => setTab("EARNED")}
-                            style={{ ...styles.tabBtn, ...(tab === "EARNED" ? styles.tabBtnActive : null) }}
+                            style={{ ...styles.tabBtn, ...(tab === "EARNED" ? styles.tabActive : null) }}
                         >
                             획득 ({earned.length})
                         </button>
                         <button
                             type="button"
                             onClick={() => setTab("LOCKED")}
-                            style={{ ...styles.tabBtn, ...(tab === "LOCKED" ? styles.tabBtnActive : null) }}
+                            style={{ ...styles.tabBtn, ...(tab === "LOCKED" ? styles.tabActive : null) }}
                         >
                             미획득 ({locked.length})
                         </button>
                     </div>
 
                     <div style={{ marginTop: 14 }}>
-                        {!isLoading && !isError && <BadgeGrid badges={list} onBadgeClick={handleClickBadge} />}
+                        {!isLoading && !isError && (
+                            <BadgeGrid
+                                badges={list}
+                                onBadgeClick={(b) => {
+                                    setSelected(b);
+                                    setOpen(true);
+                                }}
+                            />
+                        )}
                     </div>
                 </section>
-
-                <BadgeDetailModal open={open} badge={selected} onClose={handleCloseModal} />
             </div>
+
+            <BadgeDetailModal
+                open={open}
+                badge={selected}
+                onClose={() => {
+                    setOpen(false);
+                    setSelected(null);
+                }}
+            />
         </div>
     );
 }
@@ -228,6 +210,7 @@ const styles: Record<string, React.CSSProperties> = {
         color: "#111",
     },
 
+    // ✅ 화면 가운데 몰림 방지 + 보기 좋은 최대폭
     container: {
         width: "100%",
         maxWidth: 1440,
@@ -243,14 +226,12 @@ const styles: Record<string, React.CSSProperties> = {
         gap: 12,
         width: "100%",
     },
-
     headerLeft: {
         minWidth: 0,
         display: "flex",
-        justifyContent: "flex-start",
         alignItems: "center",
+        justifyContent: "flex-start",
     },
-
     headerRight: {
         minWidth: 0,
         display: "flex",
@@ -259,15 +240,15 @@ const styles: Record<string, React.CSSProperties> = {
     },
 
     title: {
-        margin: 0,
-        textAlign: "center",
         fontSize: 30,
         fontWeight: 900,
         letterSpacing: -0.4,
+        margin: 0,
+        textAlign: "center",
         lineHeight: 1.1,
     },
 
-    // ✅ 버튼 자체는 보이는데 아이콘만 사라지는 케이스 방지(레이아웃/색 안정)
+    // ✅ 버튼 안에 SVG가 무조건 가운데 오게
     backBtn: {
         width: 40,
         height: 40,
@@ -279,7 +260,7 @@ const styles: Record<string, React.CSSProperties> = {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: 0,
+        color: "#111827",
     },
 
     primaryBtn: {
@@ -294,7 +275,12 @@ const styles: Record<string, React.CSSProperties> = {
         whiteSpace: "nowrap",
     },
 
-    sectionTitle: { margin: "10px 0 12px 0", fontSize: 14, fontWeight: 900, color: "#111827" },
+    sectionTitle: {
+        margin: "10px 0 12px 0",
+        fontSize: 14,
+        fontWeight: 900,
+        color: "#111827",
+    },
 
     infoBox: {
         padding: 12,
@@ -323,22 +309,32 @@ const styles: Record<string, React.CSSProperties> = {
     },
 
     recentCard: {
+        borderRadius: 14,
         border: "1px solid #e5e7eb",
         background: "#ffffff",
-        borderRadius: 14,
         padding: 14,
         textAlign: "left",
         cursor: "pointer",
-        color: "#111",
         boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+        width: "100%",
+        boxSizing: "border-box",
     },
 
-    recentTop: { display: "flex", alignItems: "center", gap: 10 },
+    recentTop: {
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+    },
+
     recentIcon: { fontSize: 26, lineHeight: 1 },
-    recentName: { fontWeight: 900, fontSize: 14, color: "#111827" },
+    recentName: { fontWeight: 900, fontSize: 15, color: "#111827" },
     recentDesc: { marginTop: 8, fontSize: 13, color: "#4b5563", lineHeight: 1.4 },
 
-    tabs: { display: "flex", gap: 8, flexWrap: "wrap" },
+    tabs: {
+        display: "flex",
+        gap: 8,
+        flexWrap: "wrap",
+    },
 
     tabBtn: {
         padding: "8px 12px",
@@ -351,5 +347,10 @@ const styles: Record<string, React.CSSProperties> = {
         opacity: 0.9,
     },
 
-    tabBtnActive: { background: "#111827", border: "1px solid #111827", color: "#ffffff", opacity: 1 },
+    tabActive: {
+        background: "#111827",
+        border: "1px solid #111827",
+        color: "#ffffff",
+        opacity: 1,
+    },
 };

@@ -1,4 +1,6 @@
+import React from "react";
 import { createBrowserRouter } from "react-router-dom";
+<<<<<<< HEAD
 import HomePage from "@/pages/home/HomePage";
 import LoginPage from "@/pages/auth/LoginPage";
 import SignupPage from "@/pages/auth/SignupPage";
@@ -39,9 +41,8 @@ import NoticeManagePage from "@/pages/admin/NoticeManagePage";
 import SettingsPage from "@/pages/admin/SettingsPage";
 import InquiryManagePage from "@/pages/admin/InquiryManagePage.tsx";
 import AdminUserDetailPage from "@/pages/admin/AdminUserDetailPage";
-
-console.log("ROUTER LOADED ✅");
-console.log("ROUTER VERSION ✅", "2026-01-22 주최 모임 기능 추가");
+import MyBadgesPage from "@/pages/mypage/MyBadgesPage";
+import BadgeCatalogPage from "@/pages/badge/BadgeCatalogPage";
 
 export const router = createBrowserRouter(
   [
@@ -206,6 +207,14 @@ export const router = createBrowserRouter(
           <UserChatRoomPage />
         </ProtectedRoute>
       ),
+    },
+    {
+        path: "/mypage/badges",
+        element: <MyBadgesPage />,
+    },
+    {
+        path: "/badges",
+        element: <BadgeCatalogPage />,
     },
     // 👇 관리자 라우트 추가
     {

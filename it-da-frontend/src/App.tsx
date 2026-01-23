@@ -1,3 +1,4 @@
+// src/App.tsx
 import { RouterProvider } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "react-hot-toast";
@@ -45,7 +46,7 @@ function WebSocketProvider({ children }: { children: React.ReactNode }) {
         newFollowerCount: notification.newFollowerCount,
       });
     },
-    [addFollowNotification]
+    [addFollowNotification],
   );
 
   useFollowWebSocket({
@@ -97,5 +98,3 @@ function App() {
     </QueryClientProvider>
   );
 }
-
-export default App;
