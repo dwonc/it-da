@@ -1,6 +1,5 @@
 import React from "react";
 import { createBrowserRouter } from "react-router-dom";
-<<<<<<< HEAD
 import HomePage from "@/pages/home/HomePage";
 import LoginPage from "@/pages/auth/LoginPage";
 import SignupPage from "@/pages/auth/SignupPage";
@@ -209,12 +208,12 @@ export const router = createBrowserRouter(
       ),
     },
     {
-        path: "/mypage/badges",
-        element: <MyBadgesPage />,
+      path: "/mypage/badges",
+      element: <MyBadgesPage />,
     },
     {
-        path: "/badges",
-        element: <BadgeCatalogPage />,
+      path: "/badges",
+      element: <BadgeCatalogPage />,
     },
     // 👇 관리자 라우트 추가
     {

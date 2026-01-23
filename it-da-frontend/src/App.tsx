@@ -98,3 +98,5 @@ function App() {
     </QueryClientProvider>
   );
 }
+
+export default App; // ← 이 줄 추가!
