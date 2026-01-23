@@ -7,6 +7,7 @@ import Header from "@/components/layout/Header.tsx";
 import MeetingReviewsModal from "@/pages/mypage/components/MeetingReviewsModal";
 import ReviewModal from "@/pages/mypage/components/ReviewModal";
 import "./MyMeetingsListPage.css";
+import toast from "react-hot-toast";
 
 const MyMeetingsListPage: React.FC = () => {
     const navigate = useNavigate();
@@ -173,7 +174,15 @@ const MyMeetingsListPage: React.FC = () => {
                                                             className="mml-btn chat"
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                navigate(`/chat/${meeting.meetingId}`);
+                                                                console.log("🛠️ 클릭된 모임 데이터:", meeting); // 데이터 구조 확인용
+
+                                                                if (meeting.chatRoomId) {
+                                                                    navigate(`/chat/${meeting.chatRoomId}`);
+                                                                } else {
+                                                                    // ✅ 데이터가 비어있을 때의 피드백
+                                                                    console.error("❌ chatRoomId가 없습니다. 백엔드 응답을 확인하세요.");
+                                                                    toast.error("채팅방 정보를 불러올 수 없습니다. 다시 시도해주세요.");
+                                                                }
                                                             }}
                                                         >
                                                             💬 톡방 입장

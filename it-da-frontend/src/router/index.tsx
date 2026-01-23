@@ -26,6 +26,8 @@ import MeetingManagePage from "@/pages/meeting/MeetingManagePage";
 import MeetingEditPage from "@/pages/meeting/MeetingEditPage";
 // ✅ 내 모임 페이지 import 추가
 import MyMeetingsListPage from "@/pages/mypage/MyMeetingsListPage";
+import ChatRoomSuccess from "@/pages/chat/ChatRoomSuccess.tsx";
+import ChatRoomListPage from "@/pages/chat/ChatRoomListPage.tsx";
 
 console.log("ROUTER LOADED ✅");
 console.log("ROUTER VERSION ✅", "2026-01-21 내 모임 페이지 분리");
@@ -68,10 +70,10 @@ export const router = createBrowserRouter(
             path: "/meetings",
             element: <MeetingListPage />,
         },
-        {
-            path: "/meeting/:id",
-            element: <MeetingDetailPage />,
-        },
+        // {
+        //     path: "/meeting/:id",
+        //     element: <MeetingDetailPage />,
+        // },
         {
             path: "/signup",
             element: (
@@ -144,6 +146,18 @@ export const router = createBrowserRouter(
                     <TestChatPage />
                 </ProtectedRoute>
             ),
+        },
+        {
+            path: "/social/chat/success", // CreateChatRoom에서 이동하는 경로와 일치
+            element: (
+                <ProtectedRoute>
+                    <ChatRoomSuccess />
+                </ProtectedRoute>
+            ),
+        },
+        {
+          path:"/social/rooms",
+          element: <ChatRoomListPage />
         },
         {
             path: "/meetings/create",

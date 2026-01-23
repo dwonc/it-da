@@ -322,6 +322,7 @@ public class ParticipationService {
 
         return MyRecentMeetingResponse.builder()
                 .meetingId(meeting.getMeetingId())
+                .chatRoomId(meeting.getChatRoom() != null ? meeting.getChatRoom().getId() : null)
                 .title(meeting.getTitle())
                 .category(meeting.getCategory())
                 .subcategory(meeting.getSubcategory())
@@ -469,4 +470,5 @@ public class ParticipationService {
                 .completedAt(participation.getCompletedAt())
                 .build();
     }
+
 }

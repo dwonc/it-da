@@ -5,7 +5,7 @@ import { MyMeeting } from '../../../api/mypage.api';
 interface Props {
     upcoming: MyMeeting[];
     completed: MyMeeting[];
-    onOpenChat?: (meetingId: number) => void;
+    onOpenChat?: (chatRoomId: number) => void;
     // ✅ meetingTitle 추가
     onOpenReview?: (meetingId: number, meetingTitle: string) => void;
 }
@@ -57,7 +57,13 @@ const MyMeetingsPage: React.FC<Props> = ({ upcoming, completed, onOpenChat, onOp
                                         <button
                                             className="meeting-btn"
                                             type="button"
-                                            onClick={() => onOpenChat?.(m.meetingId)}
+                                            onClick={() => {
+                                                if (m.chatRoomId) {
+                                                    onOpenChat?.(m.chatRoomId);
+                                                } else {
+                                                    console.error("❌ 이 모임의 chatRoomId가 없습니다:", m);
+                                                }
+                                            }}
                                         >
                                             톡방
                                         </button>
