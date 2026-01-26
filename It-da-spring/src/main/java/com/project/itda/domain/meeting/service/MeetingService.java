@@ -1,5 +1,7 @@
+// src/main/java/com/project/itda/domain/meeting/service/MeetingService.java
 package com.project.itda.domain.meeting.service;
 
+import com.project.itda.domain.badge.event.MeetingCreatedEvent;
 import com.project.itda.domain.meeting.dto.request.MeetingCreateRequest;
 import com.project.itda.domain.meeting.dto.request.MeetingUpdateRequest;
 import com.project.itda.domain.meeting.dto.response.MeetingDetailResponse;
@@ -21,6 +23,7 @@ import com.project.itda.domain.social.repository.ChatRoomRepository;
 import com.project.itda.domain.user.entity.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -39,7 +42,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * 모임 서비스 (CRUD)
+ * 모임 서비스 (CRUD + 배지 이벤트)
  */
 @Service
 @Slf4j
@@ -50,12 +53,13 @@ public class MeetingService {
     private final ParticipationRepository participationRepository;
     private final ChatRoomRepository chatRoomRepository;
     private final ChatParticipantRepository chatParticipantRepository;
-    private final PushNotificationService pushNotificationService;  // ✅ [NEW] 추가됨!
+    private final PushNotificationService pushNotificationService;
+    private final ApplicationEventPublisher eventPublisher;  // ⭐ 추가!
 
     private final String uploadDir = "uploads/meetings/";
 
     /**
-     * 모임 생성
+     * 모임 생성 (배지 이벤트 포함)
      */
     @Transactional
     public MeetingResponse createMeeting(User user, MeetingCreateRequest request) {
@@ -107,7 +111,7 @@ public class MeetingService {
         ChatParticipant chatOrganizer = ChatParticipant.builder()
                 .chatRoom(chatRoom)
                 .user(user)
-                .role(ChatRole.ORGANIZER) // 방장 권한 부여
+                .role(ChatRole.ORGANIZER)
                 .joinedAt(LocalDateTime.now())
                 .lastReadAt(LocalDateTime.now())
                 .build();
@@ -124,6 +128,10 @@ public class MeetingService {
 
         log.info("✅ 모임 생성 및 주최자 참여 완료 - meetingId: {}, chatRoomId: {}",
                 savedMeeting.getMeetingId(), chatRoom.getId());
+
+        // ⭐ 배지 이벤트 발행! (모임 생성 시 주최 배지 체크)
+        eventPublisher.publishEvent(new MeetingCreatedEvent(user.getUserId()));
+        log.info("🏅 모임 생성 배지 이벤트 발행: organizerId={}", user.getUserId());
 
         return toMeetingResponse(savedMeeting);
     }
@@ -205,7 +213,6 @@ public class MeetingService {
 
         log.info("✅ 모임 수정 완료 - meetingId: {}", meetingId);
 
-        // ✅ [NEW] 모임 정보 변경 시 참여자들에게 실시간 알림
         notifyMeetingUpdatedToParticipants(meetingId, "info", null);
 
         return toMeetingResponse(meeting);
@@ -357,7 +364,7 @@ public class MeetingService {
     }
 
     /**
-     * ✅ 모임 이미지 업로드 (실시간 알림 추가!)
+     * 모임 이미지 업로드 (실시간 알림 추가!)
      */
     @Transactional
     public String uploadMeetingImage(User user, Long meetingId, MultipartFile image) {
@@ -399,7 +406,6 @@ public class MeetingService {
 
             log.info("✅ 이미지 업로드 완료 - imageUrl: {}", imageUrl);
 
-            // ✅✅✅ [NEW] 모든 참여자에게 이미지 변경 실시간 알림! ✅✅✅
             notifyMeetingUpdatedToParticipants(meetingId, "imageUrl", imageUrl);
 
             return imageUrl;
@@ -411,13 +417,12 @@ public class MeetingService {
     }
 
     /**
-     * ✅✅✅ [NEW] 모임 정보 변경 시 모든 참여자에게 WebSocket 알림 ✅✅✅
+     * 모임 정보 변경 시 모든 참여자에게 WebSocket 알림
      */
     private void notifyMeetingUpdatedToParticipants(Long meetingId, String field, Object value) {
         try {
             log.info("🔔 모임 업데이트 알림 시작 - meetingId: {}, field: {}", meetingId, field);
 
-            // APPROVED 상태인 모든 참여자 조회
             List<Participation> participations = participationRepository
                     .findByMeetingIdAndStatus(meetingId, ParticipationStatus.APPROVED);
 

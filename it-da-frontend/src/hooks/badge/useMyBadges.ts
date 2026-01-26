@@ -1,18 +1,17 @@
+// src/hooks/badge/useMyBadges.ts
 import { useCallback, useEffect, useState } from "react";
-import { getUnlockedBadges, type Badge } from "@/api/badge.api";
-
-// ✅ 임시: 로그인 붙이기 전까지 userId 하드코딩
-const TEMP_USER_ID = 1;
+import { getUnlockedBadges } from "@/api/badge.api";
+import type { UserBadgeDto } from "@/types/badge";
 
 type UseMyBadgesResult = {
-    data: Badge[];
+    data: UserBadgeDto[];
     isLoading: boolean;
     isError: boolean;
     refetch: () => Promise<void>;
 };
 
 export function useMyBadges(): UseMyBadgesResult {
-    const [data, setData] = useState<Badge[]>([]);
+    const [data, setData] = useState<UserBadgeDto[]>([]);
     const [isLoading, setIsLoading] = useState<boolean>(true);
     const [isError, setIsError] = useState<boolean>(false);
 
@@ -20,7 +19,7 @@ export function useMyBadges(): UseMyBadgesResult {
         try {
             setIsLoading(true);
             setIsError(false);
-            const badges = await getUnlockedBadges(TEMP_USER_ID);
+            const badges = await getUnlockedBadges();
             setData(Array.isArray(badges) ? badges : []);
         } catch {
             setIsError(true);

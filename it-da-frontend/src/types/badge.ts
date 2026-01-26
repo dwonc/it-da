@@ -25,10 +25,28 @@ export interface UserBadgeDto {
 
     unlocked: boolean;
 
-    // 서버에서 null이 올 수도 있으니 여기서 널 허용 (방어는 normalizeBadge가 함)
     progress: number | null;
     targetValue: number | null;
     progressPercentage: number | null;
 
     unlockedAt: string | null;
 }
+
+// ✅ 서버 응답 타입 (mapServerBadge.ts 호환용)
+export interface ServerUserBadgeResponse {
+    badgeId: number;
+    badgeCode: string;
+    badgeName: string;
+    description: string | null;
+    grade: string;      // 서버에서는 string으로 옴
+    category: string;   // 서버에서는 string으로 옴
+    icon: string | null;
+    unlocked: boolean;
+    progress: number | null;
+    targetValue: number | null;
+    progressPercentage: number | null;
+    unlockedAt: string | null;
+}
+
+// ✅ Badge 타입 alias
+export type Badge = UserBadgeDto;

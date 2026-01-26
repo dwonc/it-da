@@ -11,6 +11,7 @@ import mypageApi, {
 } from "../../api/mypage.api";
 import followApi from "../../api/follow.api";
 import userSettingApi from "../../api/userSetting.api";
+import activityApi, { Activity } from "../../api/activity.api"; // ⭐ 추가!
 import type { FollowUser } from "../../types/follow.types";
 import ProfileSection from "./components/ProfileSection";
 import PendingReviews from "./components/PendingReviews";
@@ -19,13 +20,17 @@ import MyMeetingsPage from "./components/MyMeetingsPage";
 import ReviewModal from "./components/ReviewModal";
 import NotificationDropdown from "./components/NotificationDropdown";
 import FollowModal from "./components/FollowModal";
-import ArchiveTab from "./components/ArchiveTab";
 import StatsTab from "./components/StatsTab";
 import SettingsTab from "./components/SettingsTab";
 import ProfileEditModal from "./components/ProfileEditModal";
 import MeetingReviewsModal from "./components/MeetingReviewsModal";
 import MyReviewsModal from "./components/MyReviewsModal";
 import PreferenceEditModal from "./components/PreferenceEditModal";
+// ✅ 배지 관련 import
+import BadgeCatalogModal from "@/components/badge/BadgeCatalogModal";
+import BadgeToast from "@/components/badge/BadgeToast";
+import { useBadges } from "@/hooks/badge/useBadges";
+import { useBadgeWebSocket } from "@/hooks/badge/UseBadgeWebSocket";
 import {
   useProfileWebSocket,
   ProfileUpdate,
@@ -46,7 +51,7 @@ const MyPage: React.FC = () => {
   const [isPreferenceModalOpen, setIsPreferenceModalOpen] = useState(false);
   const [pendingReviews, setPendingReviews] = useState<PendingReview[]>([]);
   const [myReviews, setMyReviews] = useState<MyReview[]>([]);
-  const [ongoingMeetings, setOngoingMeetings] = useState<MyMeeting[]>([]); // ✅ 진행 중인 모임 추가
+  const [ongoingMeetings, setOngoingMeetings] = useState<MyMeeting[]>([]);
   const [upcomingMeetings, setUpcomingMeetings] = useState<MyMeeting[]>([]);
   const [completedMeetings, setCompletedMeetings] = useState<MyMeeting[]>([]);
   const [organizedMeetings, setOrganizedMeetings] = useState<
@@ -82,39 +87,44 @@ const MyPage: React.FC = () => {
 
   const [isMyReviewsModalOpen, setIsMyReviewsModalOpen] = useState(false);
 
-  const badges = [
-    {
-      id: 1,
-      icon: "🌟",
-      name: "첫 모임",
-      description: "첫 모임 참여 완료",
-      isUnlocked: true,
-    },
-    {
-      id: 2,
-      icon: "🔥",
-      name: "열정러",
-      description: "10회 모임 참여",
-      isUnlocked: true,
-    },
-    {
-      id: 3,
-      icon: "🏅",
-      name: "마스터",
-      description: "50회 모임 참여",
-      isUnlocked: false,
-    },
-  ];
+  // ✅ 배지 도감 모달 state
+  const [badgeCatalogOpen, setBadgeCatalogOpen] = useState(false);
 
-  const activities = [
-    {
-      id: 1,
-      date: "2026.01.02",
-      title: "새해 첫 모임 신청!",
-      description: "한강 선셋 피크닉 모임에 참여했어요",
-      icon: "🎉",
-    },
-  ];
+  // ✅ 실제 배지 데이터 조회
+  const { data: badgesData, isLoading: badgesLoading } = useBadges();
+
+  // ✅ 배지 WebSocket (실시간 알림)
+  const { toast: badgeToast, hideToast: hideBadgeToast } = useBadgeWebSocket({
+    userId: currentUserId,
+    enabled: !!currentUserId,
+  });
+
+  // ✅ 획득한 배지만 필터링
+  const unlockedBadges = useMemo(() => {
+    if (!badgesData) return [];
+    return badgesData.filter((b) => b.unlocked);
+  }, [badgesData]);
+
+  // ✅ 배지 카운트
+  const badgeCount = unlockedBadges.length;
+
+  // ⭐ 활동 기록 실데이터
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [activitiesLoading, setActivitiesLoading] = useState(false);
+
+  // ⭐ 활동 기록 조회
+  const fetchActivities = useCallback(async () => {
+    if (!currentUserId) return;
+    setActivitiesLoading(true);
+    try {
+      const data = await activityApi.getActivities(currentUserId, 20);
+      setActivities(data);
+    } catch (err) {
+      console.error("활동 기록 조회 실패:", err);
+    } finally {
+      setActivitiesLoading(false);
+    }
+  }, [currentUserId]);
 
   const stats = useMemo(() => {
     const totalMeetings =
@@ -122,7 +132,7 @@ const MyPage: React.FC = () => {
         ? participationCount
         : completedMeetings.length +
           upcomingMeetings.length +
-          ongoingMeetings.length; // ✅ ongoing 추가
+          ongoingMeetings.length;
 
     const avgRating =
       averageRating > 0
@@ -153,26 +163,25 @@ const MyPage: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      // ✅ getOngoingMeetings 추가
       const [pending, reviews, ongoing, upcoming, completed, organized] =
         await Promise.all([
           mypageApi.getPendingReviews(currentUserId, currentUserId),
           mypageApi.getMyReviews(currentUserId, currentUserId),
-          mypageApi.getOngoingMeetings(currentUserId, currentUserId), // ✅ 진행 중인 모임
+          mypageApi.getOngoingMeetings(currentUserId, currentUserId),
           mypageApi.getUpcomingMeetings(currentUserId, currentUserId),
           mypageApi.getCompletedMeetings(currentUserId, currentUserId),
           mypageApi.getOrganizedMeetings(currentUserId),
         ]);
       setPendingReviews(pending);
       setMyReviews(reviews);
-      setOngoingMeetings(ongoing); // ✅ 추가
+      setOngoingMeetings(ongoing);
       setUpcomingMeetings(upcoming);
       setCompletedMeetings(completed);
       setOrganizedMeetings(organized);
 
       setParticipationCount(
         ongoing.length + upcoming.length + completed.length,
-      ); // ✅ ongoing 추가
+      );
 
       if (reviews.length > 0) {
         const avg =
@@ -189,6 +198,7 @@ const MyPage: React.FC = () => {
       setLoading(false);
     }
   }, [currentUserId]);
+
   const handleProfileUpdate = useCallback(
     (update: ProfileUpdate) => {
       console.log("📊 마이페이지 프로필 업데이트 수신:", update);
@@ -212,24 +222,21 @@ const MyPage: React.FC = () => {
         setFollowingCount(update.newFollowerCount);
       }
 
-      // ✅ [NEW] 참여 승인 시 실시간 카드 이동!
-      // 모임장이 승인하면 → "진행 예정" → "진행 중인 모임"으로 즉시 이동
       if (update.type === "PARTICIPATION_APPROVED") {
         console.log("🎉 참여 승인됨! 모임 리스트 새로고침:", update);
         if (update.participationCount !== undefined) {
           setParticipationCount(update.participationCount as number);
         }
         void fetchAll();
+        void fetchActivities(); // ⭐ 활동 기록도 새로고침
       }
 
-      // ✅ 모임 마감 시 실시간 카드 이동!
-      // 모임장이 마감하면 → "진행 중인 모임" → "완료된 모임"으로 즉시 이동
       if (update.type === "MEETING_COMPLETED") {
         console.log("🏁 모임 완료됨! 모임 리스트 새로고침:", update);
         void fetchAll();
+        void fetchActivities(); // ⭐ 활동 기록도 새로고침
       }
 
-      // ✅ [NEW] 모임 정보 변경 시 (이미지, 제목 등) → 즉시 새로고침
       if (update.type === "MEETING_UPDATED") {
         console.log("🖼️ 모임 정보 변경됨! 모임 리스트 새로고침:", update);
         void fetchAll();
@@ -237,6 +244,7 @@ const MyPage: React.FC = () => {
 
       if (update.type === "REVIEW_CREATED") {
         void fetchAll();
+        void fetchActivities(); // ⭐ 활동 기록도 새로고침
       }
 
       if (
@@ -260,7 +268,7 @@ const MyPage: React.FC = () => {
         }
       }
     },
-    [currentUserId, fetchAll],
+    [currentUserId, fetchAll, fetchActivities],
   );
 
   useProfileWebSocket({
@@ -313,6 +321,7 @@ const MyPage: React.FC = () => {
       void fetchFollowCounts();
       void fetchSettings();
       void fetchUserProfile();
+      void fetchActivities(); // ⭐ 활동 기록 조회
     }
   }, [
     currentUserId,
@@ -320,9 +329,9 @@ const MyPage: React.FC = () => {
     fetchFollowCounts,
     fetchSettings,
     fetchUserProfile,
+    fetchActivities,
   ]);
 
-  // ✅ 30초마다 자동 새로고침
   useEffect(() => {
     const interval = setInterval(() => {
       if (currentUserId) {
@@ -500,7 +509,7 @@ const MyPage: React.FC = () => {
         ? participationCount
         : upcomingMeetings.length +
           completedMeetings.length +
-          ongoingMeetings.length; // ✅ ongoing 추가
+          ongoingMeetings.length;
 
     return {
       username: user?.username || "사용자",
@@ -515,7 +524,7 @@ const MyPage: React.FC = () => {
         followingCount,
         followerCount,
         meetingCount,
-        badgeCount: 8,
+        badgeCount,
         averageRating: average || 0,
       },
     };
@@ -529,6 +538,7 @@ const MyPage: React.FC = () => {
     followerCount,
     participationCount,
     averageRating,
+    badgeCount,
   ]);
 
   if (!currentUserId) {
@@ -667,7 +677,6 @@ const MyPage: React.FC = () => {
                   }}
                 />
                 <MyReviews data={myReviews} onOpenModal={handleOpenMyReviews} />
-                {/* ✅ ongoing 추가! */}
                 <MyMeetingsPage
                   ongoing={ongoingMeetings}
                   upcoming={upcomingMeetings}
@@ -679,9 +688,98 @@ const MyPage: React.FC = () => {
                 />
               </>
             )}
+
+            {/* ✅ 취미 아카이브 탭 - 배지 섹션 */}
             {activeTab === "archive" && (
-              <ArchiveTab badges={badges} activities={activities} />
+              <div className="archive-content">
+                {/* 🏆 획득한 배지 섹션 */}
+                <section className="archive-section">
+                  <div className="archive-section-header">
+                    <h3 className="archive-section-title">🏆 획득한 배지</h3>
+                    <button
+                      type="button"
+                      className="badge-catalog-btn"
+                      onClick={() => setBadgeCatalogOpen(true)}
+                    >
+                      📖 배지 도감 보기
+                    </button>
+                  </div>
+
+                  <div className="badge-preview-grid">
+                    {badgesLoading ? (
+                      <div className="badge-preview-empty">
+                        <span>배지 불러오는 중...</span>
+                      </div>
+                    ) : unlockedBadges.length === 0 ? (
+                      <div className="badge-preview-empty">
+                        <span>아직 획득한 배지가 없어요</span>
+                      </div>
+                    ) : (
+                      <>
+                        {unlockedBadges.slice(0, 6).map((badge) => (
+                          <div
+                            key={badge.badgeId}
+                            className="badge-preview-item"
+                            onClick={() => setBadgeCatalogOpen(true)}
+                          >
+                            <div className="badge-preview-icon">
+                              {badge.icon || "🏅"}
+                            </div>
+                            <div className="badge-preview-name">
+                              {badge.badgeName}
+                            </div>
+                          </div>
+                        ))}
+                        {unlockedBadges.length > 6 && (
+                          <button
+                            type="button"
+                            className="badge-preview-more"
+                            onClick={() => setBadgeCatalogOpen(true)}
+                          >
+                            +{unlockedBadges.length - 6}개 더보기
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </section>
+
+                {/* 📝 활동 기록 섹션 - ⭐ 실데이터 연동 */}
+                <section className="archive-section">
+                  <h3 className="archive-section-title">📝 활동 기록</h3>
+                  <div className="activity-list">
+                    {activitiesLoading ? (
+                      <div className="activity-empty">
+                        <span>활동 기록 불러오는 중...</span>
+                      </div>
+                    ) : activities.length === 0 ? (
+                      <div className="activity-empty">
+                        <span>아직 활동 내역이 없어요</span>
+                      </div>
+                    ) : (
+                      activities.map((activity) => (
+                        <div
+                          key={`${activity.type}-${activity.id}`}
+                          className="activity-item"
+                        >
+                          <div className="activity-icon">{activity.icon}</div>
+                          <div className="activity-content">
+                            <div className="activity-title">
+                              {activity.title}
+                            </div>
+                            <div className="activity-desc">
+                              {activity.description}
+                            </div>
+                            <div className="activity-date">{activity.date}</div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </section>
+              </div>
             )}
+
             {activeTab === "stats" && <StatsTab stats={stats} />}
             {activeTab === "settings" && (
               <SettingsTab
@@ -712,6 +810,7 @@ const MyPage: React.FC = () => {
         onSubmitted={() => {
           void fetchAll();
           void fetchFollowCounts();
+          void fetchActivities(); // ⭐ 리뷰 작성 후 활동 기록 새로고침
         }}
       />
       <PreferenceEditModal
@@ -754,6 +853,24 @@ const MyPage: React.FC = () => {
         onToggleFollow={handleToggleFollowUser}
         onUserClick={handleUserClick}
       />
+
+      {/* ✅ 배지 도감 모달 */}
+      <BadgeCatalogModal
+        open={badgeCatalogOpen}
+        onClose={() => setBadgeCatalogOpen(false)}
+      />
+
+      {/* ✅ 배지 획득 토스트 알림 */}
+      {badgeToast.visible && badgeToast.badge && (
+        <BadgeToast
+          visible={badgeToast.visible}
+          badgeName={badgeToast.badge.badgeName}
+          badgeIcon={badgeToast.badge.badgeIcon}
+          badgeGrade={badgeToast.badge.badgeGrade}
+          badgeDescription={badgeToast.badge.badgeDescription}
+          onClose={hideBadgeToast}
+        />
+      )}
     </div>
   );
 };

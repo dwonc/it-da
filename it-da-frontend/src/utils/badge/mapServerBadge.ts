@@ -1,29 +1,29 @@
 // src/utils/badge/mapServerBadge.ts
-import type { ServerUserBadgeResponse, UserBadgeDto } from "@/types/badge";
+import type { UserBadgeDto, BadgeGrade, BadgeCategory, ServerUserBadgeResponse } from "@/types/badge";
 
-/** 서버(중첩) -> UI(평탄화) */
-export function mapServerBadgeToDto(item: ServerUserBadgeResponse): UserBadgeDto {
-    const b = item.badge;
-
+/**
+ * 서버 응답을 프론트엔드 타입으로 변환
+ */
+export function mapServerBadge(server: ServerUserBadgeResponse): UserBadgeDto {
     return {
-        badgeId: b.badgeId,
-        badgeCode: b.badgeCode,
-        badgeName: b.badgeName,
-        description: b.description ?? null,
-        grade: String(b.grade ?? "UNKNOWN"),
-        category: String(b.category ?? "UNKNOWN"),
-        icon: b.icon ?? null,
-
-        unlocked: Boolean(item.unlocked),
-        progress: typeof item.progress === "number" ? item.progress : 0,
-        targetValue: typeof item.targetValue === "number" ? item.targetValue : 0,
-        progressPercentage:
-            typeof item.progressPercentage === "number" ? item.progressPercentage : null,
-        unlockedAt: item.unlockedAt ?? null,
+        badgeId: server.badgeId,
+        badgeCode: server.badgeCode,
+        badgeName: server.badgeName,
+        description: server.description,
+        grade: server.grade as BadgeGrade,           // ✅ 타입 캐스팅
+        category: server.category as BadgeCategory,  // ✅ 타입 캐스팅
+        icon: server.icon,
+        unlocked: server.unlocked,
+        progress: server.progress,
+        targetValue: server.targetValue,
+        progressPercentage: server.progressPercentage,
+        unlockedAt: server.unlockedAt,
     };
 }
 
-export function mapServerBadgesToDtos(data: unknown): UserBadgeDto[] {
-    if (!Array.isArray(data)) return [];
-    return data.map((x) => mapServerBadgeToDto(x as ServerUserBadgeResponse));
+/**
+ * 서버 응답 배열을 프론트엔드 타입 배열로 변환
+ */
+export function mapServerBadges(servers: ServerUserBadgeResponse[]): UserBadgeDto[] {
+    return servers.map(mapServerBadge);
 }

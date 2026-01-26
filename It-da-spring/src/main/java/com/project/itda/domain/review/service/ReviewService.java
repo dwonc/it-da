@@ -1,7 +1,9 @@
+// src/main/java/com/project/itda/domain/review/service/ReviewService.java
 package com.project.itda.domain.review.service;
 
 import com.project.itda.domain.ai.dto.response.SentimentAnalysisDTO;
 import com.project.itda.domain.ai.service.SentimentAnalysisService;
+import com.project.itda.domain.badge.event.ReviewCreatedEvent;
 import com.project.itda.domain.meeting.entity.Meeting;
 import com.project.itda.domain.meeting.repository.MeetingRepository;
 import com.project.itda.domain.participation.entity.Participation;
@@ -18,6 +20,7 @@ import com.project.itda.domain.review.repository.ReviewRepository;
 import com.project.itda.domain.user.entity.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,7 +29,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * 후기 서비스 (감성 분석 + 모임별 집계 통합)
+ * 후기 서비스 (감성 분석 + 모임별 집계 + 배지 이벤트 통합)
  */
 @Service
 @Slf4j
@@ -37,7 +40,8 @@ public class ReviewService {
     private final ParticipationRepository participationRepository;
     private final MeetingRepository meetingRepository;
     private final SentimentAnalysisService sentimentAnalysisService;
-    private final MeetingSentimentService meetingSentimentService;  // ✅ 추가
+    private final MeetingSentimentService meetingSentimentService;
+    private final ApplicationEventPublisher eventPublisher;  // ⭐ 추가!
 
     /**
      * 사용자 리뷰 목록 조회 (AI SVD용)
@@ -60,7 +64,7 @@ public class ReviewService {
     }
 
     /**
-     * 후기 작성 (감성 분석 포함)
+     * 후기 작성 (감성 분석 + 배지 이벤트 포함)
      */
     @Transactional
     public ReviewResponse createReview(User user, ReviewCreateRequest request) {
@@ -124,7 +128,7 @@ public class ReviewService {
         // 7. 모임 평균 평점 업데이트
         updateMeetingAvgRating(meeting.getMeetingId());
 
-        // ✅ 8. 모임 감성 집계 업데이트 (추가)
+        // 8. 모임 감성 집계 업데이트
         try {
             meetingSentimentService.updateMeetingSentiment(meeting.getMeetingId());
             log.info("📊 모임 감성 집계 업데이트 완료");
@@ -132,9 +136,14 @@ public class ReviewService {
             log.warn("⚠️ 모임 감성 집계 실패 (계속 진행): {}", e.getMessage());
         }
 
+        // ⭐ 9. 배지 이벤트 발행!
+        String sentiment = sentimentType != null ? sentimentType.name() : "NEUTRAL";
+        eventPublisher.publishEvent(new ReviewCreatedEvent(user.getUserId(), sentiment));
+        log.info("🏅 리뷰 배지 이벤트 발행: userId={}, sentiment={}", user.getUserId(), sentiment);
+
         log.info("✅ 후기 작성 완료 - reviewId: {}", savedReview.getReviewId());
 
-        // 9. 응답 생성
+        // 10. 응답 생성
         return toReviewResponse(savedReview, sentimentResult);
     }
 
@@ -183,7 +192,7 @@ public class ReviewService {
         // 6. 평점 변경 시 모임 평균 평점 업데이트
         updateMeetingAvgRating(review.getMeeting().getMeetingId());
 
-        // ✅ 7. 모임 감성 재집계 (추가)
+        // 7. 모임 감성 재집계
         try {
             meetingSentimentService.updateMeetingSentiment(review.getMeeting().getMeetingId());
         } catch (Exception e) {
@@ -216,7 +225,7 @@ public class ReviewService {
         // 평균 평점 업데이트
         updateMeetingAvgRating(meetingId);
 
-        // ✅ 모임 감성 재집계 (추가)
+        // 모임 감성 재집계
         try {
             meetingSentimentService.updateMeetingSentiment(meetingId);
         } catch (Exception e) {
@@ -227,7 +236,7 @@ public class ReviewService {
     }
 
     /**
-     * ✅ 모임의 후기 목록 조회 (모달용 - List<ReviewResponse> 반환)
+     * 모임의 후기 목록 조회 (모달용)
      */
     @Transactional(readOnly = true)
     public List<ReviewResponse> getReviewListByMeetingId(Long meetingId) {
@@ -312,7 +321,7 @@ public class ReviewService {
     }
 
     /**
-     * ✅ Review 엔티티 → ReviewResponse 변환 (프론트엔드 필드명에 맞춤)
+     * Review 엔티티 → ReviewResponse 변환
      */
     private ReviewResponse toReviewResponse(Review review, SentimentAnalysisDTO sentimentResult) {
         String sentimentIcon = null;
