@@ -12,7 +12,7 @@ import "./ChatRoomPage.css";
 import BillInputModal from "../../components/chat/BillInputModal";
 import PollInputModal from "../../components/chat/PollInputModal";
 import api from "@/api/axios.config";
-// import InviteMemberModal from "@/components/chat/InviteMemberModal.tsx";
+import InviteMemberModal from "@/components/chat/InviteMemberModal.tsx";
 
 interface BillData {
   totalAmount: number;
@@ -37,6 +37,7 @@ interface RawMemberResponse {
   updatedAt?: string;
   profileImageUrl?: string;
   role?: string;
+  isFollowing: boolean;
 }
 
 // const api = axios.create({
@@ -343,6 +344,7 @@ const ChatRoomPage: React.FC = () => {
               updatedAt: m.updatedAt || new Date().toISOString(),
               profileImageUrl: m.profileImageUrl || "",
               role: m.role === "ORGANIZER" ? "LEADER" : "MEMBER",
+              isFollowing: m.isFollowing,
             }),
           );
           setMembers(formattedMembers);
@@ -518,7 +520,17 @@ const ChatRoomPage: React.FC = () => {
     try {
       await chatApi.followUser(targetUserId);
       toast.success("팔로우가 완료되었습니다!");
-    } catch {
+
+      // ✅ [수정] 성공 시 화면 데이터를 즉시 업데이트 (새로고침 없이 반영)
+      setMembers((prevMembers) =>
+        prevMembers.map((member) =>
+          member.userId === targetUserId
+            ? { ...member, isFollowing: true } // 해당 유저의 팔로우 상태를 true로 변경
+            : member,
+        ),
+      );
+    } catch (error) {
+      console.error("팔로우 실패:", error);
       toast.error("팔로우 처리 중 오류가 발생했습니다.");
     }
   };
