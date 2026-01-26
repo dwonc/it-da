@@ -68,6 +68,7 @@ const MeetingDetailPage = () => {
   const { user } = useAuthStore();
   const mapRef = useRef<any>(null);
 
+  const [matchPercent, setMatchPercent] = useState<number | null>(null);
   const [meeting, setMeeting] = useState<MeetingDetail | null>(null);
   const [satisfaction, setSatisfaction] =
     useState<SatisfactionPrediction | null>(null);
@@ -327,30 +328,71 @@ const MeetingDetailPage = () => {
   const checkSvdRecommendation = async () => {
     if (!user || !meetingId) {
       console.log("⚠️ SVD 체크 - user 또는 meetingId 없음");
+      setIsSvdRecommended(false);
+      setMatchPercent(null);
+      return;
+    }
+
+    const targetId = Number(meetingId);
+    if (Number.isNaN(targetId)) {
+      console.log("⚠️ meetingId 파싱 실패:", meetingId);
+      setIsSvdRecommended(false);
+      setMatchPercent(null);
       return;
     }
 
     try {
       const response = await axios.get(
-        `http://localhost:8080/api/ai/recommendations/meetings`,
+        "http://localhost:8080/api/ai/recommendations/meetings",
         {
           params: {
-            user_id: user.userId,
+            user_id: user.userId, // 백엔드가 이걸로 받는다고 했으니 유지
             top_n: 20,
           },
           withCredentials: true,
         },
       );
 
-      const recommendations = response.data.recommendations || [];
-      const isRecommended = recommendations.some(
-        (rec: any) => rec.meeting_id === parseInt(meetingId),
-      );
+      const recommendations = response.data?.recommendations ?? [];
+      if (!Array.isArray(recommendations) || recommendations.length === 0) {
+        setIsSvdRecommended(false);
+        setMatchPercent(null);
+        return;
+      }
 
+      console.group("🧠 SVD Top20 디버깅");
+      console.log(
+        "📋 SVD 추천 meetingIds:",
+        recommendations.map((r: any) => r.meetingId),
+      );
+      console.log("🎯 현재 상세 meetingId:", targetId);
+
+      // ✅ meetingId 키 대응 (필요하면 meeting_id도 같이 대비)
+      const rank = recommendations.findIndex((rec: any) => {
+        const id = Number(rec?.meetingId ?? rec?.meeting_id ?? rec?.id);
+        return id === targetId;
+      });
+
+      console.log("📊 SVD rank (없으면 -1):", rank);
+      console.log("✅ Top20 포함 여부:", rank !== -1);
+      console.groupEnd();
+
+      const isRecommended = rank !== -1;
       setIsSvdRecommended(isRecommended);
+
+      // ✅ 순위 기반 matchPercent (1등=100, 꼴찌=0)
+      if (isRecommended) {
+        const n = recommendations.length;
+        const percent = n <= 1 ? 100 : Math.round(100 * (1 - rank / (n - 1)));
+        setMatchPercent(percent);
+      } else {
+        setMatchPercent(null);
+      }
     } catch (err: any) {
       console.error("❌ SVD 추천 확인 실패:", err);
-      setIsSvdRecommended(true);
+      // ❌ 여기서 true로 하면 “항상 추천”처럼 보여서 위험
+      setIsSvdRecommended(false);
+      setMatchPercent(null);
     }
   };
 
@@ -562,12 +604,16 @@ const MeetingDetailPage = () => {
 
           {/* AI 배지들 - 왼쪽 상단 */}
           <div className="ai-badges">
-            {isSvdRecommended && (
-              <div className="ai-badge svd-badge">
-                <span>🤖</span>
-                <span>AI 맞춤형 96%</span>
-              </div>
-            )}
+            <div className="ai-badge svd-badge">
+              <span>🤖</span>
+              <span>
+                {isSvdRecommended && matchPercent !== null
+                  ? `AI 추천 적합도 ${matchPercent}%`
+                  : satisfaction?.predictedRating >= 4.2
+                    ? "AI 분석 결과 높은 적합도"
+                    : "AI 분석 완료"}
+              </span>
+            </div>
             {satisfaction && satisfaction.predictedRating && (
               <div className="satisfaction-badge">
                 <span>⭐</span>

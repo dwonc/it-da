@@ -303,6 +303,7 @@ const ChatRoomPage: React.FC = () => {
         // 3. 방 제목 설정
         try {
           const rooms = await chatApi.getRooms();
+          console.log("🔍 채팅방 목록 로드:", rooms);
           const currentRoom = rooms.find(
             (r: any) => r.chatRoomId === Number(roomId),
           );

@@ -662,7 +662,7 @@ async def predict_satisfaction_post(request: SatisfactionRequest):
             "predictedRating": predicted_rating,
             "ratingStars": rating_to_stars(predicted_rating),
             "satisfactionLevel": get_satisfaction_level(predicted_rating),
-            "recommended": predicted_rating >= 3.5,
+            "recommended": predicted_rating >= 4.0,
             "reasons": build_reasons(feat)
         }
 
