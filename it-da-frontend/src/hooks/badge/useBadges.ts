@@ -2,15 +2,25 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getUserBadges, updateAllBadges, updateBadgeProgress } from "@/api/badge.api";
 import type { UserBadgeDto } from "@/types/badge";
-import { normalizeBadge } from "@/utils/badge/normalizeBadge";
 
 export function useBadges() {
     return useQuery<UserBadgeDto[]>({
         queryKey: ["badges"],
         queryFn: async () => {
+            // 먼저 update-all 호출해서 user_badges 테이블에 데이터 생성
+            try {
+                await updateAllBadges();
+                console.log("✅ 배지 진행도 업데이트 완료");
+            } catch (err) {
+                console.warn("⚠️ 배지 업데이트 실패 (무시하고 진행):", err);
+            }
+
+            // 배지 데이터 조회
             const raw = await getUserBadges();
-            return Array.isArray(raw) ? raw.map(normalizeBadge) : [];
+            console.log("📦 조회된 배지:", raw?.length ?? 0, "개");
+            return Array.isArray(raw) ? raw : [];
         },
+        staleTime: 1000 * 60 * 5, // 5분 캐시
     });
 }
 

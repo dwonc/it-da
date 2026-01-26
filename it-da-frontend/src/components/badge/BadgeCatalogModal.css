@@ -1,0 +1,622 @@
+/* src/components/badge/BadgeCatalogModal.css */
+
+/* ============================================
+   배지 도감 모달 - 포켓몬 도감 스타일
+   ============================================ */
+
+.badge-catalog-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(6px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    z-index: 9998;
+    animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.badge-catalog-modal {
+    width: 100%;
+    max-width: 900px;
+    max-height: 90vh;
+    background: linear-gradient(180deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    border-radius: 24px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow:
+            0 25px 50px -12px rgba(0, 0, 0, 0.5),
+            0 0 0 1px rgba(255, 255, 255, 0.1),
+            inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* 헤더 */
+.badge-catalog-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 20px 24px;
+    background: rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.badge-catalog-title-area {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+}
+
+.badge-catalog-icon {
+    font-size: 28px;
+}
+
+.badge-catalog-title {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 800;
+    color: #ffffff;
+    letter-spacing: -0.5px;
+}
+
+.badge-catalog-stats {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    padding: 10px 16px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.badge-catalog-unlocked {
+    font-size: 24px;
+    font-weight: 800;
+    color: #10b981;
+}
+
+.badge-catalog-divider {
+    font-size: 18px;
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.badge-catalog-total {
+    font-size: 18px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.badge-catalog-close {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+    font-size: 18px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.badge-catalog-close:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* 카테고리 탭 - sticky 고정! */
+.badge-catalog-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 16px 24px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(15, 23, 42, 0.98);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    backdrop-filter: blur(8px);
+}
+
+.badge-catalog-tabs::-webkit-scrollbar {
+    height: 4px;
+}
+
+.badge-catalog-tabs::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
+}
+
+.badge-catalog-tab {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s;
+}
+
+.badge-catalog-tab:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+}
+
+.badge-catalog-tab.active {
+    background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+    border-color: transparent;
+    color: #ffffff;
+    box-shadow: 0 4px 15px rgba(139, 92, 246, 0.4);
+}
+
+.tab-icon {
+    font-size: 12px;
+}
+
+.tab-label {
+    font-weight: 700;
+}
+
+.tab-count {
+    font-size: 10px;
+    opacity: 0.8;
+    padding: 1px 5px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+}
+
+.badge-catalog-tab.active .tab-count {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* 콘텐츠 영역 */
+.badge-catalog-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+}
+
+.badge-catalog-loading,
+.badge-catalog-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 200px;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 14px;
+    gap: 12px;
+}
+
+.loading-spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid rgba(255, 255, 255, 0.1);
+    border-top-color: #8b5cf6;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* 배지 그리드 */
+.badge-catalog-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 16px;
+}
+
+/* 배지 카드 */
+.badge-catalog-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+}
+
+.badge-catalog-card:hover {
+    transform: translateY(-4px);
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.badge-catalog-card.unlocked {
+    border-color: var(--grade-border);
+    box-shadow: 0 0 20px var(--grade-glow);
+}
+
+.badge-catalog-card.unlocked:hover {
+    box-shadow:
+            0 10px 30px rgba(0, 0, 0, 0.3),
+            0 0 30px var(--grade-glow);
+}
+
+/* 등급별 빛남 효과 */
+.badge-catalog-card.unlocked.grade-legendary {
+    animation: legendaryGlow 2s ease-in-out infinite;
+}
+
+@keyframes legendaryGlow {
+    0%, 100% { box-shadow: 0 0 20px rgba(245, 158, 11, 0.4); }
+    50% { box-shadow: 0 0 35px rgba(245, 158, 11, 0.7); }
+}
+
+.badge-catalog-card.unlocked.grade-epic {
+    animation: epicGlow 2s ease-in-out infinite;
+}
+
+@keyframes epicGlow {
+    0%, 100% { box-shadow: 0 0 15px rgba(139, 92, 246, 0.3); }
+    50% { box-shadow: 0 0 25px rgba(139, 92, 246, 0.5); }
+}
+
+.badge-catalog-card.locked {
+    opacity: 0.5;
+    filter: grayscale(60%);
+}
+
+.badge-catalog-card.locked:hover {
+    opacity: 0.7;
+    filter: grayscale(40%);
+}
+
+/* 배지 아이콘 */
+.badge-card-icon-wrapper {
+    position: relative;
+    margin-bottom: 10px;
+}
+
+.badge-card-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    border: 3px solid var(--grade-border, rgba(255, 255, 255, 0.2));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    transition: all 0.2s;
+}
+
+.badge-catalog-card.unlocked .badge-card-icon {
+    background: var(--grade-bg);
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+}
+
+.badge-card-lock {
+    position: absolute;
+    bottom: -4px;
+    right: -4px;
+    width: 22px;
+    height: 22px;
+    background: #374151;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    border: 2px solid #1f2937;
+}
+
+/* 배지 이름 */
+.badge-card-name {
+    font-size: 12px;
+    font-weight: 700;
+    color: #ffffff;
+    text-align: center;
+    line-height: 1.3;
+    margin-bottom: 6px;
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* 등급 */
+.badge-card-grade {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: var(--grade-bg);
+    color: var(--grade-text);
+    border: 1px solid var(--grade-border);
+    margin-bottom: 8px;
+}
+
+/* 진행도 */
+.badge-card-progress {
+    width: 100%;
+}
+
+.badge-card-progress-bar {
+    height: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 4px;
+}
+
+.badge-card-progress-fill {
+    height: 100%;
+    background: var(--grade-border, #8b5cf6);
+    border-radius: 10px;
+    transition: width 0.3s ease;
+}
+
+.badge-card-progress-text {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.6);
+    text-align: center;
+    font-weight: 600;
+}
+
+.badge-catalog-card.unlocked .badge-card-progress-text {
+    color: #10b981;
+}
+
+/* 푸터 */
+.badge-catalog-footer {
+    padding: 16px 24px;
+    text-align: center;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.5);
+    background: rgba(0, 0, 0, 0.2);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* ============================================
+   배지 상세 모달
+   ============================================ */
+
+.badge-detail-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    z-index: 9999;
+    animation: fadeIn 0.15s ease;
+}
+
+.badge-detail-modal {
+    width: 100%;
+    max-width: 400px;
+    background: #ffffff;
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3);
+    animation: popIn 0.2s ease;
+}
+
+@keyframes popIn {
+    from {
+        opacity: 0;
+        transform: scale(0.9);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.badge-detail-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 24px;
+    position: relative;
+}
+
+.badge-detail-icon {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 40px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    flex-shrink: 0;
+}
+
+.badge-detail-info {
+    flex: 1;
+}
+
+.badge-detail-name {
+    margin: 0 0 8px 0;
+    font-size: 20px;
+    font-weight: 800;
+    color: #1f2937;
+}
+
+.badge-detail-grade {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.badge-detail-close {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(0, 0, 0, 0.1);
+    color: #374151;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.badge-detail-close:hover {
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.badge-detail-body {
+    padding: 24px;
+    border-top: 1px solid #f3f4f6;
+}
+
+.badge-detail-section {
+    margin-bottom: 20px;
+}
+
+.badge-detail-section:last-child {
+    margin-bottom: 0;
+}
+
+.badge-detail-label {
+    font-size: 12px;
+    font-weight: 700;
+    color: #9ca3af;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+}
+
+.badge-detail-value {
+    font-size: 15px;
+    color: #374151;
+    line-height: 1.5;
+}
+
+.badge-detail-progress-wrapper {
+    margin-top: 8px;
+}
+
+.badge-detail-progress-bar {
+    height: 10px;
+    background: #f3f4f6;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 8px;
+}
+
+.badge-detail-progress-fill {
+    height: 100%;
+    border-radius: 10px;
+    transition: width 0.3s ease;
+}
+
+.badge-detail-progress-text {
+    font-size: 14px;
+    color: #6b7280;
+    font-weight: 600;
+}
+
+.badge-detail-status {
+    margin-top: 20px;
+    padding: 16px;
+    background: #f9fafb;
+    border-radius: 12px;
+    text-align: center;
+}
+
+.badge-status-unlocked {
+    font-size: 15px;
+    font-weight: 700;
+    color: #059669;
+}
+
+.badge-status-locked {
+    font-size: 14px;
+    font-weight: 600;
+    color: #6b7280;
+}
+
+/* ============================================
+   반응형
+   ============================================ */
+
+@media (max-width: 640px) {
+    .badge-catalog-modal {
+        max-height: 95vh;
+        border-radius: 20px 20px 0 0;
+    }
+
+    .badge-catalog-header {
+        padding: 16px 20px;
+    }
+
+    .badge-catalog-title {
+        font-size: 18px;
+    }
+
+    .badge-catalog-tabs {
+        padding: 12px 16px;
+    }
+
+    .badge-catalog-content {
+        padding: 16px;
+    }
+
+    .badge-catalog-grid {
+        grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+        gap: 12px;
+    }
+
+    .badge-catalog-card {
+        padding: 12px 8px;
+    }
+
+    .badge-card-icon {
+        width: 48px;
+        height: 48px;
+        font-size: 24px;
+    }
+
+    .badge-card-name {
+        font-size: 11px;
+    }
+
+    .badge-detail-modal {
+        max-width: 100%;
+        margin: 16px;
+    }
+}

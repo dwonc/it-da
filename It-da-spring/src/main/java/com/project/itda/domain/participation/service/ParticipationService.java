@@ -1,5 +1,7 @@
+// src/main/java/com/project/itda/domain/participation/service/ParticipationService.java
 package com.project.itda.domain.participation.service;
 
+import com.project.itda.domain.badge.event.ParticipationCompletedEvent;
 import com.project.itda.domain.meeting.entity.Meeting;
 import com.project.itda.domain.meeting.repository.MeetingRepository;
 import com.project.itda.domain.notification.service.NotificationService;
@@ -16,18 +18,18 @@ import com.project.itda.domain.user.entity.UserFollow;
 import com.project.itda.domain.user.repository.UserFollowRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * 참여 서비스 (알림 연동)
+ * 참여 서비스 (알림 + 배지 연동)
  */
 @Service
 @Slf4j
@@ -38,6 +40,7 @@ public class ParticipationService {
     private final MeetingRepository meetingRepository;
     private final NotificationService notificationService;
     private final UserFollowRepository userFollowRepository;
+    private final ApplicationEventPublisher eventPublisher;  // ⭐ 추가!
 
     /**
      * 모임 참여 신청
@@ -450,7 +453,7 @@ public class ParticipationService {
 
     /**
      * ✅ 모임 마감 (주최자만)
-     * 모든 APPROVED 참여자를 COMPLETED로 변경 + 실시간 알림
+     * 모든 APPROVED 참여자를 COMPLETED로 변경 + 실시간 알림 + 배지 이벤트
      */
     @Transactional
     public int completeMeeting(User organizer, Long meetingId) {
@@ -468,7 +471,7 @@ public class ParticipationService {
         List<Participation> approvedParticipations = participationRepository
                 .findByMeetingIdAndStatus(meetingId, ParticipationStatus.APPROVED);
 
-        // 각 참여자를 COMPLETED로 변경 + 알림 전송
+        // 각 참여자를 COMPLETED로 변경 + 알림 전송 + 배지 이벤트
         int count = 0;
         for (Participation participation : approvedParticipations) {
             participation.complete();
@@ -485,6 +488,10 @@ public class ParticipationService {
             } catch (Exception e) {
                 log.error("❌ 알림 전송 실패: {}", e.getMessage());
             }
+
+            // ⭐ 배지 이벤트 발행 (참여 완료 시 배지 자동 체크!)
+            eventPublisher.publishEvent(new ParticipationCompletedEvent(participation.getUser().getUserId()));
+            log.info("🏅 배지 이벤트 발행: userId={}", participation.getUser().getUserId());
         }
 
         log.info("🏁 모임 마감 완료 - meetingId: {}, completedCount: {}", meetingId, count);
