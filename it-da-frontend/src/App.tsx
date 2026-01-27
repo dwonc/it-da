@@ -15,7 +15,7 @@ import { useUserChatStore } from "./stores/useUserChatStore";
 import FollowToast from "./pages/mypage/components/FollowToast";
 import MessageToast from "./components/chat/MessageToast";
 import useUserChatWebSocket from "./hooks/chat/useUserChatWebSocket";
-
+import { useNotificationWebSocket } from "./hooks/notification/useNotificationWebSocket";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -57,6 +57,7 @@ function WebSocketProvider({ children }: { children: React.ReactNode }) {
   useUserChatWebSocket({
     userId: user?.userId,
   });
+  useNotificationWebSocket();
 
   return (
     <>
