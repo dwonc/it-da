@@ -1,10 +1,7 @@
 package com.project.itda.domain.meeting.controller;
 
 import com.project.itda.domain.auth.dto.SessionUser;
-import com.project.itda.domain.meeting.dto.request.BatchRequestDto;
-import com.project.itda.domain.meeting.dto.request.MeetingCreateRequest;
-import com.project.itda.domain.meeting.dto.request.MeetingUpdateRequest;
-import com.project.itda.domain.meeting.dto.request.MeetingSearchRequest;
+import com.project.itda.domain.meeting.dto.request.*;
 import com.project.itda.domain.meeting.dto.response.MeetingSearchResponse;
 import com.project.itda.domain.meeting.dto.response.MeetingDetailResponse;
 import com.project.itda.domain.meeting.dto.response.MeetingResponse;
@@ -221,10 +218,21 @@ public class MeetingController {
         Map<String, Object> result = meetingService.getMeetingsByIds(meetingIds);
         return ResponseEntity.ok(result);
     }
+
 // ========================================
 // MeetingController.java에 아래 메서드 추가!
 // (클래스 맨 아래, 마지막 } 전에)
 // ========================================
+    @PatchMapping("/{meetingId}/location")
+    public ResponseEntity<?> updateLocation(
+            @PathVariable Long meetingId,
+            @RequestBody LocationUpdateRequest request) {
+
+        // 서비스 로직: DB의 meetings 테이블 업데이트
+        meetingService.updateLocation(meetingId, request);
+
+        return ResponseEntity.ok().body(Map.of("success", true));
+    }
 
     /**
      * ✅ 카테고리별 모임 개수 조회
