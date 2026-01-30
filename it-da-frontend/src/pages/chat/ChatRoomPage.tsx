@@ -366,6 +366,7 @@ const ChatRoomPage: React.FC = () => {
       if (!roomId || !currentUser) return;
       console.log("🔍 [ChatRoom] Initializing with RoomID:", roomId);
 
+
         if (!isMounted.current) {
             try {
                 await chatApi.markAsRead(Number(roomId));
@@ -395,11 +396,14 @@ const ChatRoomPage: React.FC = () => {
           console.error("❌ 메시지 로드 실패:", e);
         }
 
-        try {
-          const rooms = await chatApi.getRooms();
-          const currentRoom = rooms.find(
-            (r: any) => r.chatRoomId === Number(roomId),
-          );
+          try {
+              const rooms = await chatApi.getRooms();
+              console.log("🔍 전체 응답:", JSON.stringify(rooms, null, 2));
+
+              const currentRoom = rooms.find((r: any) => r.chatRoomId === Number(roomId));
+              console.log("✅ currentRoom:", currentRoom);
+              console.log("✅ meetingId:", currentRoom?.meetingId);
+
             if (currentRoom) {
                 setRoomTitle(currentRoom.roomName);
                 setNotice(currentRoom.notice || "");
