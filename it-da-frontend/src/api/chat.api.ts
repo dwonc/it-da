@@ -62,31 +62,35 @@ class ChatApi {
       console.log("✅ 이미 WebSocket 연결됨");
       this.isConnected = true;
 
-      // ✅ 1. 구독 설정 (없으면!)
-      if (!this.subscription || this.subscription.closed) {
-        this.subscription = this.client.subscribe(
-          `/topic/room/${roomId}`,
-          (message) => {
-            try {
-              const parsedMessage = JSON.parse(message.body);
-              console.log("📨 메시지 수신:", parsedMessage);
-              onMessageReceived(parsedMessage);
-            } catch (error) {
-              console.error("❌ 메시지 파싱 실패:", error);
-            }
-          },
-        );
-        console.log("📡 채팅방 구독 완료:", roomId);
+      // ✅ 1. 기존 구독 해제
+      if (this.subscription) {
+        this.subscription.unsubscribe();
+        console.log("🗑️ 기존 구독 해제");
       }
 
-      // ✅ 2. JOIN 신호 전송
+      // ✅ 2. 새로 구독
+      this.subscription = this.client.subscribe(
+        `/topic/room/${roomId}`,
+        (message) => {
+          try {
+            const parsedMessage = JSON.parse(message.body);
+            console.log("📨 메시지 수신:", parsedMessage);
+            onMessageReceived(parsedMessage);
+          } catch (error) {
+            console.error("❌ 메시지 파싱 실패:", error);
+          }
+        },
+      );
+      console.log("📡 채팅방 구독 완료:", roomId);
+
+      // ✅ 3. JOIN 신호 전송
       this.client.publish({
         destination: `/app/chat/join/${roomId}`,
         body: JSON.stringify({ email: userEmail }),
       });
       console.log("🔔 JOIN 신호 전송:", roomId);
 
-      // ✅ 3. 잠시 대기 후 READ 신호 전송
+      // ✅ 4. 잠시 대기 후 READ 신호 전송
       setTimeout(() => {
         this.sendReadEvent(roomId, userEmail);
       }, 100);
