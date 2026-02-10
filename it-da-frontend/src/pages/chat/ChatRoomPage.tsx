@@ -51,13 +51,10 @@ interface RecommendedPlace {
 
 const ChatRoomPage: React.FC = () => {
   const { roomId } = useParams<{ roomId: string }>();
-  const {
-    messages,
-    addMessage,
-    setMessages,
-    markAllAsRead,
-    decrementUnreadCount,
-  } = useChatStore();
+  const messages = useChatStore((s) => s.messages);
+  const addMessage = useChatStore((s) => s.addMessage);
+  const setMessages = useChatStore((s) => s.setMessages);
+  const updateUnreadCount = useChatStore((s) => s.updateUnreadCount);
   const [members, setMembers] = useState<User[]>([]);
   const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
   const { user: currentUser } = useAuthStore();
@@ -375,12 +372,11 @@ const ChatRoomPage: React.FC = () => {
   useEffect(() => {
     const initChat = async () => {
       if (!roomId || !currentUser) return;
-      console.log("🔍 [ChatRoom] Initializing with RoomID:", roomId);
 
       if (!isMounted.current) {
         try {
-          await chatApi.markAsRead(Number(roomId));
-          markAllAsRead();
+          // ✅ READ 신호 전송 (서버의 activeUsers에 등록)
+          // await chatApi.markAsRead(Number(roomId));
         } catch (e) {
           console.warn("⚠️ 읽음 처리 실패:", e);
         }
@@ -395,7 +391,7 @@ const ChatRoomPage: React.FC = () => {
               ...msg,
               senderNickname: msg.senderNickname || "사용자",
               content: msg.content || "",
-              unreadCount: Number(msg.unreadCount ?? 0),
+              unreadCount: Number(msg.unreadCount ?? 0), // ✅ 서버 값 유지
               sentAt: msg.sentAt || new Date().toISOString(),
               type: msg.type as ChatMessage["type"],
               metadata: msg.metadata || null,
@@ -472,115 +468,160 @@ const ChatRoomPage: React.FC = () => {
       chatApi.disconnect();
       console.log("🔄 WebSocket 연결 시작...");
 
-      chatApi.connect(Number(roomId), currentUser.email, (newMsg: any) => {
-        if (!isSubscribed) {
-          console.warn("⚠️ 구독 해제된 상태, 메시지 무시");
-          return;
-        }
+      const normalizeType = (raw: any) => {
+        let t = String(raw ?? "");
 
-        console.log("📨 수신:", {
-          messageId: newMsg.messageId,
-          type: newMsg.type,
-          email: newMsg.email,
-          unreadCount: newMsg.unreadCount,
+        // 디버그용: 눈에 안 보이는 문자 확인하려고 trim은 마지막에
+        // (중간 과정에서 뭐가 섞였는지 보고 싶으면 아래 debug에서 raw도 찍자)
+        t = t.toUpperCase();
+
+        // 공백/하이픈 → _
+        t = t.replace(/[\s-]+/g, "_");
+
+        // 제로폭 문자 제거
+        t = t.replace(/[\u200B-\u200D\uFEFF]/g, "");
+
+        // 마지막 trim
+        t = t.trim();
+
+        // A~Z/_만 남김
+        t = t.replace(/[^A-Z_]/g, "");
+
+        // UNREAD_UPDATE 강제 매핑(변형 케이스도 잡기)
+        if (t.includes("UNREAD") && t.includes("UPDATE"))
+          return "UNREAD_UPDATE";
+        if (t === "READ") return "READ";
+
+        return t;
+      };
+
+      const debugType = (label: string, value: string) => {
+        console.log(label, {
+          shown: value,
+          json: JSON.stringify(value),
+          length: value.length,
+          codes: Array.from(value).map((ch) => ch.charCodeAt(0)),
+          equals_UNREAD_UPDATE: value === "UNREAD_UPDATE",
         });
+      };
 
-        // ✅ READ 신호 처리 (최우선)
-        if (newMsg.type === "READ") {
-          console.log("📖 읽음 신호 수신:", newMsg);
+      chatApi.connect(Number(roomId), currentUser.email, (newMsg: any) => {
+        if (!isSubscribed) return;
 
-          if (currentUser && newMsg.email === currentUser.email) {
-            console.log("✅ 내가 읽음 - 모든 메시지 unreadCount = 0");
-            markAllAsRead();
-          } else {
-            console.log("🔽 다른 사용자가 읽음 - unreadCount 감소");
-            decrementUnreadCount();
+        const type = normalizeType(newMsg?.type);
+
+        console.log("📨 RAW 수신:", newMsg);
+
+        // ✅ 1) UNREAD_UPDATE 최우선 처리
+        if (type === "UNREAD_UPDATE") {
+          // ❌ 기존 코드 (문제!)
+          // const targetId = Number(newMsg?.targetMessageId ?? newMsg?.messageId);
+
+          // ✅ 수정된 코드
+          const targetId = Number(newMsg?.messageId); // 백엔드에서 messageId로 보냄!
+          const unread = Number(newMsg?.unreadCount ?? 0);
+
+          console.log("🔔 UNREAD_UPDATE apply:", {
+            targetId,
+            unread,
+            rawMessageId: newMsg?.messageId,
+            rawUnreadCount: newMsg?.unreadCount,
+          });
+
+          if (!targetId) {
+            console.warn("⚠️ UNREAD_UPDATE인데 targetId 없음", newMsg);
+            return;
           }
+
+          updateUnreadCount(targetId, unread);
           return;
         }
 
-        if (!newMsg.messageId) {
-          console.error("❌ messageId 없음, 무시");
+        // ✅ 2) READ 시그널 종료
+        if (type === "READ") return;
+
+        // ✅ 3) messageId 없으면 종료
+        if (!newMsg?.messageId) return;
+
+        // ✅ 4) 빈 메시지 무시 (type 기준으로만!)
+        const ALLOW_EMPTY = new Set([
+          "UNREAD_UPDATE",
+          "IMAGE",
+          "POLL",
+          "BILL",
+          "LOCATION",
+          "VOTE",
+          "BILL_UPDATE",
+          "VOTE_UPDATE",
+          "NOTICE",
+        ]);
+
+        if (!String(newMsg?.content ?? "").trim() && !ALLOW_EMPTY.has(type)) {
+          console.warn("⚠️ 빈 메시지 무시", { type, rawType: newMsg?.type });
+          debugType("❌ empty-check type", type);
           return;
         }
 
-        if (
-          !newMsg.content?.trim() &&
-          !["IMAGE", "POLL", "BILL", "LOCATION", "VOTE"].includes(newMsg.type)
-        ) {
-          console.warn("⚠️ 빈 메시지 무시");
-          return;
-        }
-
-        if (newMsg.type === "BILL_UPDATE") {
+        // ✅ 5) BILL_UPDATE도 type으로만 판단
+        if (type === "BILL_UPDATE") {
           const targetId = Number(
-            newMsg.targetMessageId || newMsg.metadata.messageId,
+            newMsg?.targetMessageId || newMsg?.metadata?.messageId,
           );
+          if (!targetId) return;
+
           addMessage({
             ...newMsg,
             messageId: targetId,
             type: "BILL",
             metadata:
-              typeof newMsg.metadata === "string"
+              typeof newMsg?.metadata === "string"
                 ? JSON.parse(newMsg.metadata)
-                : newMsg.metadata,
+                : newMsg?.metadata,
           });
           return;
         }
 
-        if (newMsg.type === "NOTICE") {
-          setTimeout(() => {
-            fetchRoomMembers();
-          }, 500);
+        // ✅ 6) NOTICE
+        if (type === "NOTICE") {
+          setTimeout(fetchRoomMembers, 500);
         }
 
-        // ✅ unreadCount는 서버가 계산한 값을 그대로 사용
-        const finalUnreadCount = Number(newMsg.unreadCount ?? 0);
+        // ❌ 7) 자동 READ 처리 완전 제거!
+        // if (currentUser && newMsg?.email !== currentUser.email) {
+        //   if (
+        //     ["TALK", "TEXT", "IMAGE", "LOCATION", "POLL", "VOTE"].includes(type)
+        //   ) {
+        //     chatApi.markAsRead(Number(roomId));
+        //   }
+        // }
 
-        console.log("📊 서버 계산 unreadCount:", finalUnreadCount);
-
-        // ✅ 다른 사람이 보낸 메시지일 때만 자동 읽음 처리
-        if (currentUser && newMsg.email !== currentUser.email) {
-          console.log("📩 다른 사람의 메시지 - 자동 읽음 처리");
-
-          // 자동 읽음 처리
-          if (
-            newMsg.type === "TALK" ||
-            newMsg.type === "TEXT" ||
-            newMsg.type === "IMAGE" ||
-            newMsg.type === "LOCATION" ||
-            newMsg.type === "POLL" ||
-            newMsg.type === "VOTE"
-          ) {
-            if (currentUser && newMsg.email !== currentUser.email) {
-              chatApi.markAsRead(Number(roomId));
-            }
-            console.log("✅ READ 신호 전송 (타인의 메시지 수신)");
-          }
-        } else if (currentUser && newMsg.email === currentUser.email) {
-          console.log("✅ 내가 보낸 메시지 - 읽음 처리 안 함");
-        }
+        // ✅ 8) validatedMsg에도 type은 정규화 값으로 박기
+        console.log("🔍 메시지 생성 전:", {
+          rawUnreadCount: newMsg?.unreadCount,
+          parsedUnreadCount: Number(newMsg?.unreadCount ?? 0),
+          messageId: newMsg?.messageId,
+          type: type,
+        });
 
         const validatedMsg: ChatMessage = {
           ...newMsg,
-          unreadCount: finalUnreadCount,
-          senderNickname: newMsg.senderNickname || "사용자",
-          sentAt: newMsg.sentAt || new Date().toISOString(),
-          senderId: Number(newMsg.senderId),
-          messageId: Number(newMsg.messageId),
+          type: type as ChatMessage["type"],
+          unreadCount: Number(newMsg?.unreadCount ?? 0),
+          senderNickname: newMsg?.senderNickname || "사용자",
+          sentAt: newMsg?.sentAt || new Date().toISOString(),
+          senderId: Number(newMsg?.senderId),
+          messageId: Number(newMsg?.messageId),
           metadata:
-            typeof newMsg.metadata === "string"
+            typeof newMsg?.metadata === "string"
               ? JSON.parse(newMsg.metadata)
-              : newMsg.metadata,
+              : newMsg?.metadata,
         };
 
-        console.log(
-          "✅ 메시지 추가:",
-          validatedMsg.messageId,
-          validatedMsg.type,
-          "unreadCount:",
-          validatedMsg.unreadCount,
-        );
+        console.log("✅ validatedMsg 생성 완료:", {
+          messageId: validatedMsg.messageId,
+          unreadCount: validatedMsg.unreadCount,
+        });
+
         addMessage(validatedMsg);
       });
     }
@@ -588,9 +629,31 @@ const ChatRoomPage: React.FC = () => {
     return () => {
       console.log("🧹 컴포넌트 정리 시작");
       isSubscribed = false;
-      chatApi.disconnect();
+
+      // ✅ 1. READ 처리
+      if (roomId && currentUser) {
+        chatApi.markAsRead(Number(roomId));
+        console.log("✅ cleanup에서 READ 신호 전송");
+      }
+
+      // ✅ 2. LEAVE 신호 포함한 disconnect
+      setTimeout(() => {
+        chatApi.disconnect(Number(roomId)); // ✅ roomId 전달
+        console.log("✅ WebSocket 연결 해제");
+      }, 150);
     };
   }, [roomId, currentUser]);
+
+  useEffect(() => {
+    console.log(
+      "📊 현재 messages 상태:",
+      messages.map((m) => ({
+        id: m.messageId,
+        content: m.content.substring(0, 20),
+        unreadCount: m.unreadCount,
+      })),
+    );
+  }, [messages]);
 
   const fetchRoomMembers = async () => {
     if (!roomId) return;
@@ -835,17 +898,39 @@ const ChatRoomPage: React.FC = () => {
     }
   };
 
+  useEffect(() => {
+    console.log(
+      "📊 현재 messages 상태:",
+      messages.map((m) => ({
+        id: m.messageId,
+        content: m.content.substring(0, 20),
+        unreadCount: m.unreadCount,
+      })),
+    );
+  }, [messages]);
+
   return (
     <div className="chat-room-container">
       <header className="header">
         <div className="header-content">
           <button
             className="back-btn"
-            onClick={() => navigate("/")}
+            onClick={() => {
+              if (roomId && currentUser) {
+                chatApi.markAsRead(Number(roomId));
+                console.log("✅ 뒤로가기에서 READ 신호 전송");
+              }
+              // ✅ disconnect에 roomId 전달
+              setTimeout(() => {
+                chatApi.disconnect(Number(roomId));
+              }, 100);
+              navigate("/");
+            }}
             style={{ cursor: "pointer" }}
           >
             ←
           </button>
+
           <div className="header-info">
             <div className="room-title">🌅 {roomTitle}</div>
             <div className="room-meta">{members.length}명 참여중</div>

@@ -1,8 +1,10 @@
 import { Client, IMessage, StompSubscription } from "@stomp/stompjs";
 import SockJS from "sockjs-client";
 import axios from "axios";
+import { useChatStore } from "@/stores/useChatStore";
 
 const API_BASE_URL = "http://localhost:8080";
+const WEBSOCKET_URL = "http://localhost:8080"; // ✅ 추가
 
 // ✅ metadata를 위한 구체적 타입 정의 (any 제거)
 export interface ChatMessage {
@@ -18,6 +20,7 @@ export interface ChatMessage {
 class ChatApi {
   private client: Client | null = null;
   private subscription: StompSubscription | null = null;
+  private isConnected: boolean = false; // ✅ 추가
 
   async getRooms() {
     const response = await axios.get(`${API_BASE_URL}/api/social/chat/rooms`, {
@@ -50,70 +53,136 @@ class ChatApi {
     return response.data;
   }
 
-    connect(
-        roomId: number,
-        userEmail: string,
-        onMessageReceived: (msg: any) => void,
-    ) {
-        // ✅ 이메일 저장 (markAsRead에서 사용)
-        localStorage.setItem("userEmail", userEmail);
+  connect(
+    roomId: number,
+    userEmail: string,
+    onMessageReceived: (message: any) => void,
+  ) {
+    if (this.client?.connected) {
+      console.log("✅ 이미 WebSocket 연결됨");
+      this.isConnected = true;
 
-        // ✅ 기존 연결이 있다면 완전히 정리
-        if (this.client?.connected) {
-            console.warn("⚠️ 기존 연결이 있습니다. 정리 후 재연결합니다.");
-            this.disconnect();
-        }
+      // ✅ 1. 구독 설정 (없으면!)
+      if (!this.subscription || this.subscription.closed) {
+        this.subscription = this.client.subscribe(
+          `/topic/room/${roomId}`,
+          (message) => {
+            try {
+              const parsedMessage = JSON.parse(message.body);
+              console.log("📨 메시지 수신:", parsedMessage);
+              onMessageReceived(parsedMessage);
+            } catch (error) {
+              console.error("❌ 메시지 파싱 실패:", error);
+            }
+          },
+        );
+        console.log("📡 채팅방 구독 완료:", roomId);
+      }
 
-        const socket = new SockJS(`${API_BASE_URL}/ws`);
+      // ✅ 2. JOIN 신호 전송
+      this.client.publish({
+        destination: `/app/chat/join/${roomId}`,
+        body: JSON.stringify({ email: userEmail }),
+      });
+      console.log("🔔 JOIN 신호 전송:", roomId);
 
-        this.client = new Client({
-            webSocketFactory: () => socket,
-            onConnect: () => {
-                console.log(`✅ 채팅방 ${roomId} 연결 성공`);
+      // ✅ 3. 잠시 대기 후 READ 신호 전송
+      setTimeout(() => {
+        this.sendReadEvent(roomId, userEmail);
+      }, 100);
 
-                // 읽음 처리
-                this.sendReadEvent(roomId, userEmail);
-
-                // ✅ 이전 구독 정리
-                if (this.subscription) {
-                    this.subscription.unsubscribe();
-                    this.subscription = null;
-                }
-
-                // ✅ 새 구독 등록
-                this.subscription = this.client!.subscribe(
-                    `/topic/room/${roomId}`,
-                    (message: IMessage) => {
-                        const data = JSON.parse(message.body);
-                        onMessageReceived(data);
-                    },
-                );
-
-                console.log(`📡 /topic/room/${roomId} 구독 완료`);
-            },
-            onDisconnect: () => {
-                console.log("🔌 WebSocket 연결 해제");
-                this.subscription = null;
-            },
-        });
-
-        this.client.activate();
+      return;
     }
 
-  disconnect() {
-    // ✅ 구독 정리
+    this.client = new Client({
+      brokerURL: `${WEBSOCKET_URL}/ws`,
+      connectHeaders: {},
+      debug: (str) => console.log("🔌 STOMP:", str),
+      reconnectDelay: 5000,
+      heartbeatIncoming: 4000,
+      heartbeatOutgoing: 4000,
+    });
+
+    this.client.onConnect = () => {
+      console.log("✅ WebSocket 연결 성공");
+      this.isConnected = true;
+
+      // ✅ 1. 구독 시작
+      this.client!.subscribe(`/topic/room/${roomId}`, (message) => {
+        try {
+          const parsedMessage = JSON.parse(message.body);
+          console.log("📨 메시지 수신:", parsedMessage);
+          onMessageReceived(parsedMessage);
+        } catch (error) {
+          console.error("❌ 메시지 파싱 실패:", error);
+        }
+      });
+
+      // ✅ 2. JOIN 신호 전송
+      this.client!.publish({
+        destination: `/app/chat/join/${roomId}`,
+        body: JSON.stringify({ email: userEmail }),
+      });
+      console.log("🔔 JOIN 신호 전송:", roomId);
+
+      // ✅ 3. 잠시 대기 후 READ 신호 전송
+      setTimeout(() => {
+        this.sendReadEvent(roomId, userEmail);
+      }, 100);
+    };
+
+    this.client.onStompError = (frame) => {
+      console.error("❌ STOMP 에러:", frame.headers["message"]);
+      console.error("상세:", frame.body);
+      this.isConnected = false;
+    };
+
+    this.client.activate();
+  }
+
+  /**
+   * ✅ READ 신호 전송 (WebSocket만 사용)
+   */
+  private sendReadEvent(roomId: number, userEmail: string) {
+    if (this.client?.connected) {
+      this.client.publish({
+        destination: `/app/chat/read/${roomId}`,
+        body: JSON.stringify({ email: userEmail }),
+      });
+      console.log("✅ READ 신호 전송:", roomId);
+    } else {
+      console.warn("⚠️ WebSocket 미연결 - READ 신호 전송 실패");
+    }
+  }
+
+  disconnect(roomId?: number) {
+    // ✅ 1. LEAVE 신호 전송
+    if (roomId && this.client?.connected) {
+      const storedEmail = localStorage.getItem("userEmail");
+      if (storedEmail) {
+        this.client.publish({
+          destination: `/app/chat/leave/${roomId}`,
+          body: JSON.stringify({ email: storedEmail }),
+        });
+        console.log("👋 LEAVE 신호 전송:", roomId);
+      }
+    }
+
+    // ✅ 2. 구독 정리
     if (this.subscription) {
       this.subscription.unsubscribe();
       this.subscription = null;
       console.log("🗑️ 구독 해제 완료");
     }
 
-    // ✅ 클라이언트 정리
+    // ✅ 3. 클라이언트 정리
     if (this.client) {
       this.client.deactivate();
       this.client = null;
       console.log("🗑️ WebSocket 클라이언트 정리 완료");
     }
+
+    this.isConnected = false;
   }
 
   sendMessage(
@@ -141,51 +210,27 @@ class ChatApi {
     }
   }
 
-    /**
-     * ✅ 읽음 처리 (REST API + WebSocket READ 신호)
-     */
-    async markAsRead(roomId: number) {
-        const storedEmail = localStorage.getItem("userEmail");
-
-        if (this.client?.connected && storedEmail) {
-            this.client.publish({
-                destination: `/app/chat/read/${roomId}`,
-                body: JSON.stringify({ email: storedEmail }),
-            });
-            console.log("✅ WebSocket READ 신호 전송:", roomId);
-        } else {
-            console.warn("⚠️ WebSocket 미연결 - READ 신호 전송 실패");
-        }
+  /**
+   * ✅ 읽음 처리 (외부에서 호출용 - 예: 페이지 떠날 때)
+   */
+  async markAsRead(roomId: number) {
+    const storedEmail = localStorage.getItem("userEmail");
+    if (storedEmail) {
+      this.sendReadEvent(roomId, storedEmail);
     }
+  }
 
-
-
-    async getRoomMembers(roomId: number) {
-    // ✅ 404 에러 직접 해결 지점: 백엔드 포트 8080 및 정확한 경로 명시
+  async getRoomMembers(roomId: number) {
     const response = await axios.get(
       `${API_BASE_URL}/api/social/chat/rooms/${roomId}/members`,
       { withCredentials: true },
     );
     return response.data;
   }
-    /**
-     * ✅ READ 이벤트 전송 (별도 메서드, 기존 코드 유지)
-     */
-    sendReadEvent(roomId: number, email: string) {
-        if (this.client?.connected) {
-            this.client.publish({
-                destination: `/app/chat/read/${roomId}`,
-                body: JSON.stringify({ roomId, email }),
-            });
-            console.log("✅ sendReadEvent 호출:", { roomId, email });
-        } else {
-            console.warn("⚠️ WebSocket 미연결 - sendReadEvent 실패");
-        }
-    }
 
   async uploadImage(roomId: number, file: File): Promise<string> {
     const formData = new FormData();
-    formData.append("file", file); // 백엔드 @RequestParam("file")과 일치
+    formData.append("file", file);
 
     const response = await axios.post(
       `${API_BASE_URL}/api/social/chat/images/${roomId}`,
@@ -197,8 +242,9 @@ class ChatApi {
         },
       },
     );
-    return response.data.imageUrl; // 서버에서 반환한 /uploads/... 경로
+    return response.data.imageUrl;
   }
+
   async updateNotice(roomId: number, notice: string) {
     await axios.put(
       `${API_BASE_URL}/api/social/chat/rooms/${roomId}/notice`,
@@ -206,6 +252,7 @@ class ChatApi {
       { withCredentials: true },
     );
   }
+
   async searchUsers(keyword: string) {
     const response = await axios.get(
       `${API_BASE_URL}/api/social/chat/users/search`,
@@ -217,14 +264,14 @@ class ChatApi {
     return response.data;
   }
 
-  // ✅ [추가] 유저 초대
   async inviteUser(roomId: number, userId: number) {
     await axios.post(
       `${API_BASE_URL}/api/social/chat/rooms/${roomId}/invite`,
-      { targetUserId: userId }, // ✅ 수정됨: userId -> targetUserId
+      { targetUserId: userId },
       { withCredentials: true },
     );
   }
+
   async reportUser(
     reportedId: number,
     reason: string,
@@ -233,7 +280,7 @@ class ChatApi {
     const response = await axios.post(
       `${API_BASE_URL}/api/reports`,
       {
-        reportedType: "USER", // 피신고 대상이 유저인 경우
+        reportedType: "USER",
         reportedId: reportedId,
         reason: reason,
         description: description,

@@ -26,6 +26,48 @@ public interface ChatParticipantRepository extends JpaRepository<ChatParticipant
     @Query("SELECT cp.lastReadAt FROM ChatParticipant cp WHERE cp.chatRoom.id = :roomId")
     List<LocalDateTime> findAllLastReadAtByRoomId(@Param("roomId") Long roomId);
 
+    /**
+     * ✅ 특정 메시지를 읽지 않은 참여자 수 계산 (발송자 제외)
+     * 메시지 생성 시각보다 lastReadAt이 이전이거나 null인 참여자
+     */
+    @Query("""
+           select count(p)
+           from ChatParticipant p
+           where p.chatRoom.id = :roomId
+           and p.user.userId <> :senderId
+           and (p.lastReadAt is null or p.lastReadAt < :createdAt)
+            """)
+    long countUnreadExcludingSender(Long roomId, Long senderId, LocalDateTime createdAt);
+
+
+    /**
+     * ✅ 실제로 읽지 않은 사람 수
+     * = 메시지 생성 시각 이후에 lastReadAt을 업데이트하지 않은 사람
+     * = 발송자 제외, 메시지 생성 이후 READ 하지 않은 사람
+     */
+    @Query("SELECT COUNT(p) FROM ChatParticipant p " +
+            "WHERE p.chatRoom.id = :roomId " +
+            "AND p.user.userId != :senderId " +
+            "AND (p.lastReadAt IS NULL OR p.lastReadAt < :messageCreatedAt)")
+    long countActualUnread(
+            @Param("roomId") Long roomId,
+            @Param("senderId") Long senderId,
+            @Param("messageCreatedAt") LocalDateTime messageCreatedAt
+    );
+
+
+    // ✅ 새로운 메서드: 현재 활성 사용자도 제외
+    @Query("SELECT COUNT(p) FROM ChatParticipant p " +
+            "WHERE p.chatRoom.id = :roomId " +
+            "AND p.user.userId != :senderId " +
+            "AND (p.lastReadAt IS NULL OR p.lastReadAt < :messageCreatedAt) " +
+            "AND (p.lastReadAt IS NULL OR p.lastReadAt < :now)")  // ✅ 최근 활동 기준
+    long countActualUnread(
+            @Param("roomId") Long roomId,
+            @Param("senderId") Long senderId,
+            @Param("messageCreatedAt") LocalDateTime messageCreatedAt,
+            @Param("now") LocalDateTime now
+    );
 
     /**
      * ✅ 특정 시각 이전에 마지막으로 읽은 참여자 수 (= 해당 메시지를 읽지 않은 사람 수)

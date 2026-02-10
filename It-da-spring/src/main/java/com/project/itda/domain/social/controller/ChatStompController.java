@@ -1,6 +1,7 @@
 package com.project.itda.domain.social.controller;
 
 import com.project.itda.domain.social.entity.ChatMessage;
+import com.project.itda.domain.social.entity.ChatParticipant;
 import com.project.itda.domain.social.enums.MessageType;
 import com.project.itda.domain.social.repository.ChatMessageRepository;
 import com.project.itda.domain.social.repository.ChatParticipantRepository;
@@ -8,17 +9,19 @@ import com.project.itda.domain.social.service.ChatMessageService;
 import com.project.itda.domain.social.service.ChatRoomService;
 import com.project.itda.domain.user.entity.User;
 import com.project.itda.domain.user.repository.UserRepository;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
+import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessageSendingOperations;
 import org.springframework.stereotype.Controller;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
 @Slf4j
 @Controller
@@ -34,14 +37,15 @@ public class ChatStompController {
 
 
     @MessageMapping("/chat/send/{roomId}")
+    @Transactional
     public void sendMessage(@DestinationVariable Long roomId, Map<String, Object> message, SimpMessageHeaderAccessor headerAccessor) {
         try {
             String email = (String) message.get("email");
             User sender = userRepository.findByEmail(email)
                     .orElseThrow(() -> new IllegalArgumentException("유저를 찾을 수 없습니다: " + email));
 
-            long totalParticipants = chatParticipantRepository.countByChatRoomId(roomId);
-            int initialUnreadCount = (int) Math.max(0, totalParticipants - 1);
+            // ✅ 발송자만 lastReadAt 업데이트
+            chatRoomService.userJoined(roomId, email);
 
             String finalNickname = (sender.getNickname() != null && !sender.getNickname().trim().isEmpty())
                     ? sender.getNickname()
@@ -57,32 +61,24 @@ public class ChatStompController {
                 messageType = MessageType.TALK;
             }
 
-            log.info("✅ 메시지 타입 변환 완료: {} → {}", typeStr, messageType);
-
             Object rawMetadata = message.get("metadata");
             @SuppressWarnings("unchecked")
             Map<String, Object> metadata = (rawMetadata instanceof Map)
                     ? (Map<String, Object>) rawMetadata
                     : null;
 
+            // ✅ 1. 먼저 메시지 저장 (unreadCount 임시로 0)
             com.project.itda.domain.social.entity.ChatMessage savedMsg;
 
             if (messageType == MessageType.BILL || (metadata != null && !metadata.isEmpty())) {
                 savedMsg = chatMessageService.saveMessageWithMetadata(
-                        email,
-                        roomId,
-                        (String) message.get("content"),
-                        messageType,
-                        metadata,
-                        initialUnreadCount
+                        email, roomId, (String) message.get("content"),
+                        messageType, metadata, 0
                 );
             } else {
                 savedMsg = chatMessageService.saveMessage(
-                        email,
-                        roomId,
-                        (String) message.get("content"),
-                        messageType,
-                        initialUnreadCount
+                        email, roomId, (String) message.get("content"),
+                        messageType, 0
                 );
             }
 
@@ -91,19 +87,32 @@ public class ChatStompController {
                 return;
             }
 
-            log.info("✅ 메시지 저장 완료 - ID: {}, Type: {}", savedMsg.getId(), messageType);
+            // ✅ 2. DB 기반 미읽음 수 계산
+            long totalUnread = chatParticipantRepository.countUnreadExcludingSender(
+                    roomId, sender.getUserId(), savedMsg.getCreatedAt()
+            );
 
-            // ✅ 약간의 지연을 주어 READ 신호 처리 반영
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
+            // ✅ 3. 활성 사용자 목록 (방어적 복사)
+            Set<String> activeEmails = new HashSet<>(chatRoomService.getActiveUserEmails(roomId));
 
-            // ✅ 실시간 unreadCount 계산 (READ 신호 반영됨)
-            int currentUnreadCount = chatMessageService.calculateUnreadCount(roomId, savedMsg.getId());
+            // 🔍 디버깅: 활성 사용자 목록 출력
+            log.info("🔍 [ACTIVE CHECK] roomId={}, 전체 활성 사용자: {}", roomId, activeEmails);
 
-            // ✅ 응답 생성
+            activeEmails.remove(email); // 발송자 제외
+
+            log.info("🔍 [ACTIVE CHECK] 발송자 제외 후: {}", activeEmails);
+
+            // ✅ 4. 최종 unreadCount = DB 미읽음 - 활성 사용자
+            int finalUnreadCount = (int) Math.max(0, totalUnread - activeEmails.size());
+
+            log.info("📊 unreadCount 계산: totalUnread={}, activeUsers={}, final={}, 발송자={}",
+                    totalUnread, activeEmails.size(), finalUnreadCount, email);
+
+            // ✅ 5. DB에 저장
+            savedMsg.setUnreadCount(finalUnreadCount);
+            chatMessageRepository.save(savedMsg);
+
+            // ✅ 6. 응답 생성
             Map<String, Object> response = new HashMap<>();
             response.put("messageId", savedMsg.getId());
             response.put("senderId", sender.getUserId());
@@ -112,7 +121,7 @@ public class ChatStompController {
             response.put("type", messageType.name());
             response.put("sentAt", savedMsg.getCreatedAt().toString());
             response.put("email", email);
-            response.put("unreadCount", currentUnreadCount);
+            response.put("unreadCount", finalUnreadCount);
 
             if (metadata != null && !metadata.isEmpty()) {
                 response.put("metadata", metadata);
@@ -120,7 +129,7 @@ public class ChatStompController {
 
             messagingTemplate.convertAndSend("/topic/room/" + roomId, response);
 
-            log.info("✅ 메시지 전송 완료 - messageId: {}, unreadCount: {}", savedMsg.getId(), currentUnreadCount);
+            log.info("✅ 메시지 전송 완료 - messageId: {}, finalUnreadCount: {}", savedMsg.getId(), finalUnreadCount);
 
         } catch (Exception e) {
             log.error("❌ 메시지 전송 중 에러 발생", e);
@@ -128,29 +137,107 @@ public class ChatStompController {
         }
     }
 
-    @MessageMapping("/chat/read/{roomId}")
-    public void markAsRead(@DestinationVariable Long roomId, Map<String, String> payload, SimpMessageHeaderAccessor headerAccessor) {
+    @MessageMapping("/chat/join/{roomId}")
+    @Transactional
+    public void joinRoom(@DestinationVariable Long roomId, Map<String, String> payload, SimpMessageHeaderAccessor headerAccessor) {
         String email = payload.get("email");
 
-        log.info("📖 READ 신호 수신: roomId={}, email={}", roomId, email);
+        log.info("🔗 사용자 채팅방 입장: roomId={}, email={}", roomId, email);
 
-        // 세션에 정보 저장
-        headerAccessor.getSessionAttributes().put("userEmail", email);
-        headerAccessor.getSessionAttributes().put("roomId", roomId);
-
-        // ✅ 읽음 처리
+        // ✅ 1. 활성 사용자로 등록 + lastReadAt 업데이트
         chatRoomService.userJoined(roomId, email);
 
-        // ✅ 같은 채팅방의 다른 사용자들에게 READ 신호 브로드캐스트
-        Map<String, Object> readSignal = new HashMap<>();
-        readSignal.put("type", "READ");
-        readSignal.put("email", email);
-        readSignal.put("roomId", roomId);
-        readSignal.put("timestamp", LocalDateTime.now().toString());
+        // ✅ 2. 세션에 저장
+        Objects.requireNonNull(headerAccessor.getSessionAttributes()).put("userEmail", email);
+        headerAccessor.getSessionAttributes().put("roomId", roomId);
 
-        messagingTemplate.convertAndSend("/topic/room/" + roomId, readSignal);
+        // ✅ 3. 최근 메시지들의 unreadCount 재계산 (JOIN 시 감소)
+        List<ChatMessage> recentMessages = chatMessageRepository
+                .findTop50ByChatRoomIdOrderByCreatedAtDesc(roomId);
 
-        log.info("✅ READ 신호 브로드캐스트 완료: roomId={}, email={}", roomId, email);
+        log.info("🔍 JOIN 처리: {} 개 메시지 재계산", recentMessages.size());
+
+        for (ChatMessage msg : recentMessages) {
+            // ✅ DB 쿼리로 정확한 미읽음 수 계산
+            long actualUnread = chatParticipantRepository.countUnreadExcludingSender(
+                    roomId, msg.getSender().getUserId(), msg.getCreatedAt()
+            );
+
+            int finalUnreadCount = (int) actualUnread;
+
+            if (msg.getUnreadCount() != finalUnreadCount) {
+                log.info("🔄 JOIN으로 인한 unreadCount 변경: {} -> {}", msg.getUnreadCount(), finalUnreadCount);
+                msg.setUnreadCount(finalUnreadCount);
+                chatMessageRepository.save(msg);
+
+                Map<String, Object> updateSignal = new HashMap<>();
+                updateSignal.put("type", "UNREAD_UPDATE");
+                updateSignal.put("messageId", msg.getId());
+                updateSignal.put("unreadCount", finalUnreadCount);
+                updateSignal.put("email", email);
+
+                messagingTemplate.convertAndSend("/topic/room/" + roomId, updateSignal);
+
+                log.info("📤 UNREAD_UPDATE 전송 (JOIN): messageId={}, unreadCount={}",
+                        msg.getId(), finalUnreadCount);
+            }
+        }
+
+        // 🔍 디버깅: 활성 사용자 목록 확인
+        Set<String> activeEmails = chatRoomService.getActiveUserEmails(roomId);
+        log.info("🔍 [ACTIVE USERS] roomId={}, activeEmails={}", roomId, activeEmails);
+    }
+
+    @MessageMapping("/chat/read/{roomId}")
+    @Transactional
+    public void markAsRead(@DestinationVariable Long roomId, @Payload Map<String, String> payload) {
+        String email = payload.get("email");
+        log.info("📖 READ 신호 수신: roomId={}, email={}", roomId, email);
+
+        // ✅ 1. 먼저 lastReadAt 업데이트
+        chatRoomService.userJoined(roomId, email);
+
+        // ✅ 2. 최근 메시지 가져오기
+        List<ChatMessage> recentMessages = chatMessageRepository
+                .findTop50ByChatRoomIdOrderByCreatedAtDesc(roomId);
+
+        log.info("🔍 READ 처리 시작: {} 개 메시지 처리", recentMessages.size());
+
+        // ✅ 3. 각 메시지의 unreadCount 재계산
+        for (ChatMessage msg : recentMessages) {
+            // ✅ DB 쿼리로 정확한 미읽음 수 계산 (이미 lastReadAt 반영됨!)
+            long actualUnread = chatParticipantRepository.countUnreadExcludingSender(
+                    roomId, msg.getSender().getUserId(), msg.getCreatedAt()
+            );
+
+            int finalUnreadCount = (int) actualUnread;
+
+            log.info("📊 메시지 ID={}, 발송자={}, DB미읽음={}, 현재DB값={}, 계산값={}",
+                    msg.getId(),
+                    msg.getSender().getEmail(),
+                    actualUnread,
+                    msg.getUnreadCount(),
+                    finalUnreadCount);
+
+            if (msg.getUnreadCount() != finalUnreadCount) {
+                log.info("🔄 업데이트 필요! {} -> {}", msg.getUnreadCount(), finalUnreadCount);
+                msg.setUnreadCount(finalUnreadCount);
+                chatMessageRepository.save(msg);
+
+                Map<String, Object> updateSignal = new HashMap<>();
+                updateSignal.put("type", "UNREAD_UPDATE");
+                updateSignal.put("messageId", msg.getId());
+                updateSignal.put("unreadCount", finalUnreadCount);
+                updateSignal.put("email", email);
+
+                messagingTemplate.convertAndSend("/topic/room/" + roomId, updateSignal);
+
+                log.info("📤 UNREAD_UPDATE 전송: messageId={}, unreadCount={}",
+                        msg.getId(), finalUnreadCount);
+            }
+        }
+
+        log.info("✅ READ 처리 완료: roomId={}, email={}", roomId, email);
     }
 
     /**
@@ -169,6 +256,47 @@ public class ChatStompController {
         );
 
         return (int) unreadCount;
+    }
+    @MessageMapping("/chat/leave/{roomId}")
+    @Transactional
+    public void leaveRoom(@DestinationVariable Long roomId, @Payload Map<String, String> payload) {
+        String email = payload.get("email");
+        log.info("👋 사용자 퇴장: roomId={}, email={}", roomId, email);
+
+        // ✅ 1. activeUsers에서 제거
+        chatRoomService.userLeft(roomId, email);
+
+        // ✅ 2. 최근 메시지들의 unreadCount 재계산 (LEAVE 시 증가)
+        List<ChatMessage> recentMessages = chatMessageRepository
+                .findTop50ByChatRoomIdOrderByCreatedAtDesc(roomId);
+
+        log.info("🔍 LEAVE 처리: {} 개 메시지 재계산", recentMessages.size());
+
+        for (ChatMessage msg : recentMessages) {
+            // ✅ DB 쿼리로 정확한 미읽음 수 계산
+            long actualUnread = chatParticipantRepository.countUnreadExcludingSender(
+                    roomId, msg.getSender().getUserId(), msg.getCreatedAt()
+            );
+
+            int finalUnreadCount = (int) actualUnread;
+
+            if (msg.getUnreadCount() != finalUnreadCount) {
+                log.info("🔄 LEAVE로 인한 unreadCount 변경: {} -> {}", msg.getUnreadCount(), finalUnreadCount);
+                msg.setUnreadCount(finalUnreadCount);
+                chatMessageRepository.save(msg);
+
+                Map<String, Object> updateSignal = new HashMap<>();
+                updateSignal.put("type", "UNREAD_UPDATE");
+                updateSignal.put("messageId", msg.getId());
+                updateSignal.put("unreadCount", finalUnreadCount);
+                updateSignal.put("email", email);
+
+                messagingTemplate.convertAndSend("/topic/room/" + roomId, updateSignal);
+
+                log.info("📤 UNREAD_UPDATE 전송 (LEAVE): messageId={}, unreadCount={}",
+                        msg.getId(), finalUnreadCount);
+            }
+        }
     }
 
 

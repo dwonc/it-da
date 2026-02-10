@@ -15,6 +15,7 @@ import com.project.itda.domain.social.repository.ChatRoomRepository;
 import com.project.itda.domain.user.entity.User;
 import com.project.itda.domain.user.repository.UserFollowRepository;
 import com.project.itda.domain.user.repository.UserRepository;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessageSendingOperations;
@@ -43,6 +44,8 @@ public class ChatRoomService {
     private final NotificationService notificationService; // ✅ 알림 서비스 의존성 주입
     private final SimpMessageSendingOperations messagingTemplate;
 
+    // ✅ 채팅방별 활성 사용자 추적 (roomId -> Set<email>)
+    private final Map<Long, Set<String>> activeUsers = new ConcurrentHashMap<>();
     // 실시간 접속자 관리
     private final Map<Long, Set<String>> connectedUsers = new ConcurrentHashMap<>();
 
@@ -284,7 +287,7 @@ public class ChatRoomService {
                 .user(user)
                 .role(ChatRole.MEMBER)
                 .joinedAt(LocalDateTime.now())
-                .lastReadAt(LocalDateTime.now())
+                .lastReadAt(null)   // ✅ 여기
                 .build();
         chatParticipantRepository.save(participant);
 
@@ -320,33 +323,39 @@ public class ChatRoomService {
                 );
     }
 
+    // 사용자가 채팅방에 입장
     public void userJoined(Long roomId, String email) {
         // lastReadAt 업데이트
         ChatParticipant participant = chatParticipantRepository
                 .findByChatRoomIdAndUserEmail(roomId, email)
                 .orElseThrow();
-
-        participant.setLastReadAt(LocalDateTime.now());
+        participant.updateLastReadAt(LocalDateTime.now());
         chatParticipantRepository.save(participant);
 
         // ✅ 활성 사용자 목록에 추가
-        activeUsersInRoom.computeIfAbsent(roomId, k -> ConcurrentHashMap.newKeySet()).add(email);
-
-        log.info("✅ 사용자 접속: roomId={}, email={}", roomId, email);
+        activeUsers.computeIfAbsent(roomId, k -> ConcurrentHashMap.newKeySet()).add(email);
+        log.info("✅ 사용자 입장: roomId={}, email={}, 현재 활성: {}",
+                roomId, email, activeUsers.get(roomId).size());
     }
 
+    // 사용자가 채팅방에서 퇴장
     public void userLeft(Long roomId, String email) {
-        // ✅ 활성 사용자 목록에서 제거
-        Set<String> users = activeUsersInRoom.get(roomId);
+        Set<String> users = activeUsers.get(roomId);
         if (users != null) {
             users.remove(email);
+            log.info("👋 사용자 퇴장: roomId={}, email={}, 남은 활성: {}",
+                    roomId, email, users.size());
         }
-
-        log.info("✅ 사용자 퇴장: roomId={}, email={}", roomId, email);
     }
 
+    // ✅ 활성 사용자 이메일 목록
+    public Set<String> getActiveUserEmails(Long roomId) {
+        return activeUsers.getOrDefault(roomId, Collections.emptySet());
+    }
+
+    // ✅ 활성 사용자 수 조회
     public int getActiveUserCount(Long roomId) {
-        Set<String> users = activeUsersInRoom.get(roomId);
+        Set<String> users = activeUsers.get(roomId);
         return users != null ? users.size() : 0;
     }
 
@@ -354,5 +363,25 @@ public class ChatRoomService {
         Set<String> users = activeUsersInRoom.get(roomId);
         return users != null && users.contains(email);
     }
+    // 현재 채팅방에 활성 중인 사용자 목록 (최근 5초 이내 활동)
+    public Set<Long> getActiveUserIds(Long roomId) {
+        LocalDateTime recentTime = LocalDateTime.now().minusSeconds(5);
 
+        return chatParticipantRepository.findByChatRoomId(roomId).stream()
+                .filter(p -> p.getLastReadAt() != null && p.getLastReadAt().isAfter(recentTime))
+                .map(p -> p.getUser().getUserId())
+                .collect(Collectors.toSet());
+    }
+
+    // ✅ 디버깅용: 특정 방의 activeUsers 초기화
+    public void clearActiveUsers(Long roomId) {
+        activeUsers.remove(roomId);
+        log.info("✅ activeUsers 초기화 완료: roomId={}", roomId);
+    }
+
+    @PostConstruct
+    public void init() {
+        activeUsers.clear();
+        log.info("✅ 모든 activeUsers 초기화 완료");
+    }
 }

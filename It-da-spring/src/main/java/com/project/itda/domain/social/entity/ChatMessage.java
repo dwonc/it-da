@@ -12,6 +12,7 @@ import java.time.LocalDateTime;
 import java.util.Map;
 
 @Entity
+@Setter
 @Table(name = "chat_messages")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)

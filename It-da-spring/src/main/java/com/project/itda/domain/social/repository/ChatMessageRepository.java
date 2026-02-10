@@ -19,4 +19,7 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
     // ⭐ 배지용: 사용자의 채팅 메시지 수
     @Query("SELECT COUNT(cm) FROM ChatMessage cm WHERE cm.sender.userId = :userId")
     int countBySenderUserId(@Param("userId") Long userId);
+
+    List<ChatMessage> findTop50ByChatRoomIdOrderByCreatedAtDesc(Long chatRoomId);
+
 }

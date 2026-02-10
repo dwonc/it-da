@@ -43,26 +43,24 @@ public class ChatMessageService {
 
     @Transactional
     public ChatMessage saveMessage(String email, Long chatRoomId, String content, MessageType type, int unreadCount) {
-        // 1. 보낸 사람 조회
         User sender = userRepository.findByEmail(email)
                 .orElseThrow();
 
-        // 2. 채팅방 조회
         ChatRoom room = chatRoomRepository.findById(chatRoomId)
                 .orElseThrow();
 
-        // 3. 메시지 엔티티 생성 및 저장
+        // ❌ 여기서 unreadCount를 0으로 고정하지 말고, 계산해서 넣어야 함!
         ChatMessage message = ChatMessage.builder()
                 .sender(sender)
                 .chatRoom(room)
                 .content(content)
                 .type(type)
-                .unreadCount(unreadCount)
+                .unreadCount(unreadCount)  // ✅ 이 값이 항상 0으로 들어옴
                 .build();
 
         ChatMessage saved = chatMessageRepository.save(message);
 
-        // ⭐ 4. 배지 이벤트 발행! (채팅 전송 시)
+        // ⭐ 배지 이벤트 발행
         int totalChatCount = chatMessageRepository.countBySenderUserId(sender.getUserId());
         eventPublisher.publishEvent(new ChatSentEvent(sender.getUserId(), totalChatCount));
 
@@ -207,21 +205,18 @@ public class ChatMessageService {
         ChatMessage message = chatMessageRepository.findById(messageId)
                 .orElseThrow(() -> new IllegalArgumentException("메시지를 찾을 수 없습니다"));
 
-        // ✅ 현재 활성 사용자 수를 제외
-        long totalUnread = chatParticipantRepository.countByRoomIdAndLastReadAtBefore(
+        // ✅ 발송자 제외하고 계산
+        long unreadCount = chatParticipantRepository.countUnreadExcludingSender(
                 roomId,
+                message.getSender().getUserId(),
                 message.getCreatedAt()
         );
 
-        int activeUsers = chatRoomService.getActiveUserCount(roomId);
+        log.debug("📊 unreadCount 계산 - roomId: {}, messageId: {}, unreadCount: {}",
+                roomId, messageId, unreadCount);
 
-        // ✅ 활성 사용자는 이미 읽은 것으로 간주
-        int finalUnreadCount = (int) Math.max(0, totalUnread - activeUsers);
-
-        log.debug("📊 unreadCount 계산 - roomId: {}, total: {}, active: {}, final: {}",
-                roomId, totalUnread, activeUsers, finalUnreadCount);
-
-        return finalUnreadCount;
+        return (int) unreadCount;
     }
+
 
 }
