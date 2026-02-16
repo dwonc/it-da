@@ -106,8 +106,6 @@ AI는 연동만 하면 끝이 아니다
 
 ## 실행 방법
 
-## 실행 방법
-
 **Backend**<br>
 cd backend<br>
 ./mvnw spring-boot:run<br>
