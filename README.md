@@ -92,6 +92,7 @@ Pydantic에서 자동 변환하도록 설정
 class Config:
     alias_generator = to_camel
     populate_by_name = True
+```
 3. 실시간 채팅 메시지가 안 보이는 문제
 문제 상황 💬
 메시지를 보내면 DB에는 저장되는데 상대방한테 안 보임
