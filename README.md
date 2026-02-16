@@ -1,205 +1,145 @@
-# 🚀 IT-DA (잇다)
+# 🤝 IT-DA (잇다)
 
-## AI 기반 취향 매칭 플랫폼
-
-> GPT 기반 Intent 분석과 LightGBM Scoring을 결합한  
-> AI 추천 중심 모임 매칭 서비스
+AI로 나한테 맞는 모임을 찾아주는 서비스입니다.  
+"조용히 코딩하고 싶어"라고 입력하면 GPT가 의도를 파악하고, 비슷한 취향의 모임을 추천해줍니다.
 
 ---
 
-# 📌 1. 프로젝트 개요
+## 📌 프로젝트 소개
 
-IT-DA는 사용자의 자연어 요청을 분석하여  
-취향과 의도를 구조화하고, AI 기반 Match Score를 산출하는 모임 추천 플랫폼입니다.
+**기간**: 2025.01 ~ 2025.02 (1개월)  
+**인원**: 6명 (팀 리더)  
+**역할**: 백엔드 개발, AI 시스템 설계
 
-단순 카테고리 필터링이 아닌  
-**AI 기반 점수 계산 구조 설계**를 통해 개인화된 추천 경험을 구현했습니다.
+**기술 스택**
+- Backend: Spring Boot, FastAPI, MySQL, Redis
+- AI: GPT API, LightGBM, SVD
+- Frontend: React, TypeScript
 
 ---
 
-# 🏗 2. 시스템 아키텍처
+## ✨ 주요 기능
 
-## 전체 구조
+### 1. AI 기반 모임 추천
+사용자가 자연어로 원하는 걸 입력하면 AI가 분석해서 맞는 모임을 찾아줍니다.
 
-```mermaid
-flowchart TD
-    A[React Frontend] --> B[Spring Boot API]
-    B --> C[Redis Session]
-    B --> D[MySQL RDS]
-    B --> E[FastAPI AI Server]
-    E --> F[GPT Intent Parsing]
-    E --> G[Feature Engineering]
-    E --> H[LightGBM Model]
-    H --> I[Match Score %]
-    I --> B
-역할 분리 설계
-🔹 Spring Boot
-JWT 기반 인증 (Spring Security)
+**추천 과정**
+1. 사용자 입력: "조용한 카페에서 책 읽는 모임 찾아줘" 💬
+2. GPT가 의도 파악: "카페", "조용함", "독서" 🤖
+3. LightGBM이 각 모임에 점수 부여 📊
+4. Match Score 높은 순으로 정렬 ⭐
 
-모임 CRUD
+**점수 계산 방식**
+- 카테고리 일치도: 25%
+- 분위기 유사도: 30%
+- 사용자 선호도: 45%
 
-WebSocket 실시간 채팅
+### 2. 실시간 채팅
+WebSocket(STOMP)으로 모임 참여자들끼리 채팅할 수 있습니다. 💬
 
-Redis 세션 관리
+---
 
-AI 서버 연동 및 결과 병합
+## 🏗️ 시스템 구조
+React Frontend
+↓
+Spring Boot API (모임 CRUD, 채팅)
+↓
+FastAPI (AI 서버)
+↓
+GPT + LightGBM
+**왜 AI 서버를 분리했나요?**
+- Spring Boot에서 Python 쓰기 어려움
+- AI 로직만 따로 고치기 편함
 
-🔹 FastAPI (AI Server)
-GPT 기반 Intent Parsing
+---
 
-사용자 요청 구조화
+## 🔥 해결한 문제
 
-Feature Engineering
+### 1. 추천 점수가 비슷하게 나오는 문제
 
-LightGBM 기반 만족도 예측
+**문제 상황** 😵  
+어떤 모임을 검색해도 점수가 다 50% 근처로 나왔습니다.  
+"이게 나한테 맞는 건지 아닌지" 구분이 안 됐어요.
 
-Match Score 정규화
+**원인**  
+- Feature 값의 범위가 제각각이었음
+- 특정 Feature만 점수에 영향을 줌
 
-🤖 3. AI 추천 시스템 설계
-추천 흐름
-다이어그램
-sequenceDiagram
-    participant U as User
-    participant FE as Frontend
-    participant BE as Spring
-    participant AI as FastAPI
-    participant GPT as OpenAI
-    participant LGBM as LightGBM
+**해결** ✅  
+1. 모든 Feature를 0~1로 정규화
+2. Intent(의도) 가중치를 조정
+3. 여러 번 테스트하면서 비율 맞춤
 
-    U->>FE: 자연어 입력
-    FE->>BE: 추천 요청
-    BE->>AI: 사용자 데이터 전달
-    AI->>GPT: Intent 분석 요청
-    GPT-->>AI: 키워드 반환
-    AI->>LGBM: Feature 입력
-    LGBM-->>AI: 예측 점수 반환
-    AI-->>BE: Match Score 전달
-    BE-->>FE: 추천 결과 반환
-Match Score 산출 기준
-Match Score는 다음 요소를 기반으로 계산됩니다:
+**결과**  
+점수가 20%~90% 범위로 골고루 나옴 📈
 
-카테고리 적합도
+---
 
-분위기(Vibe) 유사도
+### 2. FastAPI 422 에러
 
-거리 기반 가중치
+**문제 상황** ❌  
+Spring Boot에서 FastAPI로 데이터 보내면 422 에러 발생
 
-사용자 선호도
+**원인**  
+- Spring Boot: `userName` (camelCase)
+- FastAPI: `user_name` (snake_case)
+- 형식이 안 맞아서 검증 실패
 
-LightGBM 예측 만족도
+**해결** ✅  
+Pydantic에서 자동 변환하도록 설정
 
-최종 점수는 0~100%로 정규화되어 사용자에게 제공됩니다.
+```python
+class Config:
+    alias_generator = to_camel
+    populate_by_name = True
+3. 실시간 채팅 메시지가 안 보이는 문제
+문제 상황 💬
+메시지를 보내면 DB에는 저장되는데 상대방한테 안 보임
+원인
+구독 경로: /topic/chat/{chatId}
+메시지 전송 경로: /topic/chat/{userId}
+경로가 달라서 못 받음
+해결 ✅
+경로를 통일해서 해결
+4. SVD 추천이 이상하게 나오는 문제
+문제 상황 🤔
+협업 필터링(SVD)으로 추천했는데 전혀 관련 없는 모임이 나옴
+원인
+데이터가 너무 적음 (사용자 10명, 모임 20개)
+Cold Start 문제
+해결 ✅
+SVD 비중을 낮추고 LightGBM 비중을 올림
+LightGBM: 70%
+SVD: 30%
+💡 느낀 점
+AI는 연동만 하면 끝이 아니다
+GPT 결과를 어떻게 점수로 만들지, 어떻게 가중치를 줄지 계속 고민했습니다.
+데이터가 적으면 머신러닝이 의미 없다
+SVD 쓰려고 했는데 데이터가 너무 적어서 제대로 작동 안 했어요.
+로그 없으면 문제 못 찾는다
+422 에러 나왔을 때 로그 보고 데이터 형식이 다른 걸 찾았습니다.
+🚀 실행 방법
+# Backend
+cd backend
+./mvnw spring-boot:run
 
-🔥 4. 트러블슈팅 사례
-4.1 AI 추천 점수 왜곡 문제
-문제 현상
-Match%가 40~60 구간에 과도 집중
+# AI Server
+cd ai-service
+pip install -r requirements.txt
+uvicorn main:app --reload
 
-특정 카테고리 반복 추천
-
-원인 분석
-Feature 스케일 불균형
-
-Intent 가중치 과도 반영
-
-점수 정규화 로직 단순화
-
-개선 과정
-Feature Scaling 재조정
-
-Intent Weight 재설계
-
-점수 분포 기반 튜닝
-
-결과
-점수 분포 정상화
-
-추천 변별력 향상
-
-사용자 체감 추천 정확도 개선
-
-4.2 FastAPI 422 Validation Error
-문제 현상
-Spring → FastAPI 요청 시 422 오류 지속 발생
-
-원인 분석
-camelCase ↔ snake_case 불일치
-
-DTO 구조 비일관성
-
-Pydantic schema validation 실패
-
-개선 과정
-DTO 규격 통일
-
-Pydantic alias 설정 적용
-
-Request/Response 구조 표준화
-
-로깅 기반 요청 데이터 추적
-
-결과
-API 성공률 안정화
-
-인터페이스 정합성 확보
-
-☁ 5. 배포 및 인프라 구조
-다이어그램
-flowchart LR
-    User --> Domain[Gabia Domain]
-    Domain --> FE[Vercel Frontend]
-    FE --> BE[AWS Elastic Beanstalk]
-    BE --> DB[RDS MySQL]
-    BE --> Redis
-운영 중 발생한 문제
-AWS 4xx 오류 급증
-API prefix 중복 설정
-
-환경 변수 누락
-
-EB 재배포 시 설정 초기화
-
-→ 로그 기반 원인 추적 후 구조 수정
-
-RDS 접근 불가 문제
-RDS Private Subnet 위치 확인
-
-VPC / Security Group 분석
-
-EC2 SSH 접속 후 내부 DB 접근 테스트
-
-→ 인프라 레벨 문제 해결 경험 확보
-
-🧠 6. 설계 의도
-왜 AI 서버를 분리했는가?
-모델 추론 로직과 비즈니스 로직 분리
-
-Python 생태계 활용
-
-확장성과 유지보수성 확보
-
-왜 Match% 정규화 구조를 도입했는가?
-사용자 이해도 향상
-
-추천 결과 설명 가능성 확보
-
-점수 왜곡 최소화
-
-📈 7. 향후 개선 방향
-A/B 테스트 기반 추천 정확도 개선
-
-Redis 캐싱 전략 고도화
-
-Docker 멀티 컨테이너 구성
-
-Kubernetes 기반 확장 구조 학습
-
-🎯 8. 프로젝트를 통해 얻은 것
-AI 모델은 연동 대상이 아니라 설계 대상이다.
-
-인터페이스 정합성이 마이크로서비스의 핵심이다.
-
-운영 환경 문제는 로그 기반 분석이 필수다.
-
-추천 시스템은 가중치 설계가 가장 중요하다.
-```
+# Frontend
+cd frontend
+npm install
+npm start
+👥 팀원
+최동원 (팀장): 백엔드, 프론트엔드, AI 시스템 설계, 모임페이지
+김보민: 백엔드, 프론트엔드, 마이페이지
+김봉환: 백엔드, 프론트엔드, 관리자페이지
+신의진: 백엔드, 프론트엔드, 모임채팅
+김동민: 백엔드, 프론트엔드
+박성훈: 백엔드, 프론트엔드
+...
+더 궁금한 점이 있으면 연락주세요! 📧
+dwonc2@naver.com
+---
