@@ -9,7 +9,7 @@ AI로 나한테 맞는 모임을 찾아주는 서비스입니다.
 
 **기간**: 2025.01 ~ 2025.02 (1개월)  
 **인원**: 6명 (팀 리더)  
-**역할**: 백엔드|프론트엔드 개발, AI 시스템 설계
+**역할**: 백엔드 개발, AI 시스템 설계
 
 **기술 스택**
 - Backend: Spring Boot, FastAPI, MySQL, Redis
@@ -59,7 +59,7 @@ GPT + LightGBM
 
 **문제 상황** 😵  
 어떤 모임을 검색해도 점수가 다 50% 근처로 나왔습니다.  
-"이게 나한테 맞는 건지 아닌지" 구분이 안 됐어요.
+"이게 나한테 맞는 건지 아닌지" 구분이 안 됐습니다.
 
 **원인**  
 - Feature 값의 범위가 제각각이었음
@@ -81,8 +81,8 @@ GPT + LightGBM
 Spring Boot에서 FastAPI로 데이터 보내면 422 에러 발생
 
 **원인**  
-- Spring Boot: `userName` (camelCase)
-- FastAPI: `user_name` (snake_case)
+- Spring Boot는 camelCase 사용
+- FastAPI는 snake_case 기대
 - 형식이 안 맞아서 검증 실패
 
 **해결** ✅  
@@ -92,7 +92,6 @@ Pydantic에서 자동 변환하도록 설정
 class Config:
     alias_generator = to_camel
     populate_by_name = True
-```
 3. 실시간 채팅 메시지가 안 보이는 문제
 문제 상황 💬
 메시지를 보내면 DB에는 저장되는데 상대방한테 안 보임
@@ -120,16 +119,14 @@ SVD 쓰려고 했는데 데이터가 너무 적어서 제대로 작동 안 했�
 로그 없으면 문제 못 찾는다
 422 에러 나왔을 때 로그 보고 데이터 형식이 다른 걸 찾았습니다.
 🚀 실행 방법
-# Backend
+Backend
 cd backend
 ./mvnw spring-boot:run
-
-# AI Server
+AI Server
 cd ai-service
 pip install -r requirements.txt
 uvicorn main:app --reload
-
-# Frontend
+Frontend
 cd frontend
 npm install
 npm start
@@ -140,7 +137,6 @@ npm start
 신의진: 백엔드, 프론트엔드, 모임채팅
 김동민: 백엔드, 프론트엔드
 박성훈: 백엔드, 프론트엔드
-...
 더 궁금한 점이 있으면 연락주세요! 📧
 dwonc2@naver.com
 ---
