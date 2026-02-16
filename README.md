@@ -106,17 +106,20 @@ AI는 연동만 하면 끝이 아니다
 
 ## 실행 방법
 
-Backend:
+## 실행 방법
+
+**Backend**
 cd backend
 ./mvnw spring-boot:run
-AI Server:
+**AI Server**
 cd ai-service
 pip install -r requirements.txt
 uvicorn main:app --reload
-Frontend:
+**Frontend**
 cd frontend
 npm install
 npm start
+
 ## 팀원
 
 - 최동원 (팀장): 백엔드, 프론트엔드, AI 시스템 설계, 모임페이지
