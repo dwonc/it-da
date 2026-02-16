@@ -108,17 +108,17 @@ AI는 연동만 하면 끝이 아니다
 
 ## 실행 방법
 
-**Backend**
-cd backend
-./mvnw spring-boot:run
-**AI Server**
-cd ai-service
-pip install -r requirements.txt
-uvicorn main:app --reload
-**Frontend**
-cd frontend
-npm install
-npm start
+**Backend**<br>
+cd backend<br>
+./mvnw spring-boot:run<br>
+**AI Server**<br>
+cd ai-service<br>
+pip install -r requirements.txt<br>
+uvicorn main:app --reload<br>
+**Frontend**<br>
+cd frontend<br>
+npm install<br>
+npm start<br>
 
 ## 팀원
 
