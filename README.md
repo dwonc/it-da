@@ -131,4 +131,4 @@ npm start<br>
 
 더 궁금한 점이 있으면 연락주세요!
 
-Email: dwonc2@naver.com
+Email: dwonc97@gmail.com
